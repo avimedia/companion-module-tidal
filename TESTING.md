@@ -225,13 +225,18 @@ Whenever you change `src/`, restart the connection in Companion/Buttons to pick 
 
 ## 9. After-test cleanup
 
-If you want to start completely fresh from the project root:
+If you want to start completely fresh, make sure you're in the project root first:
 
 ```bash
+cd ~/dev/companion-module-tidal              # macOS/Linux
+# cd $HOME\dev\companion-module-tidal        # Windows PowerShell
+
 rm -rf node_modules dist .yarn yarn.lock *.tgz
 corepack yarn@4.12.0 install
 corepack yarn@4.12.0 build
 ```
+
+> ⚠️ The `rm -rf` deletes only build artefacts and dependency caches — never run it in a parent directory or you'll wipe more than intended. The line above is deliberately scoped to files inside `companion-module-tidal`.
 
 To remove the connection from Companion/Buttons: *Connections → TIDAL → Remove*. To delete the module entirely from the host app, also clear the Developer modules path or remove the `.tgz` you imported.
 
