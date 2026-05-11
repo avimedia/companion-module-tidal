@@ -3,6 +3,13 @@ import { exec } from 'node:child_process'
 import { platform } from 'node:process'
 import type ModuleInstance from './main.js'
 import type { SearchKind } from './tidal-api.js'
+import {
+	type AbstractModifier,
+	type ShortcutKey,
+	SUPPORTED_SHORTCUT_KEYS,
+	isSupportedShortcutKey,
+	sendShortcutToTidal,
+} from './playback.js'
 
 export type ActionsSchema = {
 	search: { options: { query: string; kind: string; limit: number } }
@@ -13,6 +20,15 @@ export type ActionsSchema = {
 	refresh_token: { options: Record<string, never> }
 	open_tidal_uri: { options: { uri: string } }
 	open_track_in_desktop: { options: { id: string } }
+	playback_play_pause: { options: Record<string, never> }
+	playback_next: { options: Record<string, never> }
+	playback_previous: { options: Record<string, never> }
+	playback_seek_forward: { options: Record<string, never> }
+	playback_seek_backward: { options: Record<string, never> }
+	playback_volume_up: { options: Record<string, never> }
+	playback_volume_down: { options: Record<string, never> }
+	playback_mute_toggle: { options: Record<string, never> }
+	playback_send_shortcut: { options: { key: string; modifiers: string[] } }
 }
 
 const SEARCH_KIND_CHOICES = [
@@ -197,7 +213,80 @@ export function UpdateActions(self: ModuleInstance): void {
 				}
 			},
 		},
+		playback_play_pause: makePlaybackAction(self, 'Playback: Play / Pause', 'space', []),
+		playback_next: makePlaybackAction(self, 'Playback: Next track', 'right', ['cmdOrCtrl']),
+		playback_previous: makePlaybackAction(self, 'Playback: Previous track', 'left', ['cmdOrCtrl']),
+		playback_seek_forward: makePlaybackAction(self, 'Playback: Seek forward', 'right', ['shift']),
+		playback_seek_backward: makePlaybackAction(self, 'Playback: Seek backward', 'left', ['shift']),
+		playback_volume_up: makePlaybackAction(self, 'Playback: Volume up', 'up', ['cmdOrCtrl']),
+		playback_volume_down: makePlaybackAction(self, 'Playback: Volume down', 'down', ['cmdOrCtrl']),
+		playback_mute_toggle: makePlaybackAction(self, 'Playback: Toggle mute', 'm', ['cmdOrCtrl']),
+		playback_send_shortcut: {
+			name: 'Playback: Send custom keyboard shortcut to TIDAL',
+			description:
+				'Activates the TIDAL window and sends the chosen key with the selected modifiers. Use this for shortcuts not covered by the other Playback actions.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'key',
+					label: 'Key',
+					default: 'space',
+					choices: SUPPORTED_SHORTCUT_KEYS.map((k) => ({ id: k, label: k })),
+				},
+				{
+					type: 'multidropdown',
+					id: 'modifiers',
+					label: 'Modifiers',
+					default: [],
+					choices: [
+						{ id: 'cmdOrCtrl', label: '⌘ on macOS / Ctrl on Windows & Linux' },
+						{ id: 'shift', label: 'Shift' },
+						{ id: 'alt', label: '⌥ Option / Alt' },
+					],
+				},
+			],
+			callback: async (event) => {
+				const rawKey = String(event.options.key ?? '').trim()
+				if (!isSupportedShortcutKey(rawKey)) {
+					self.log('error', `playback_send_shortcut called with unsupported key "${rawKey}"`)
+					return
+				}
+				const rawMods = Array.isArray(event.options.modifiers) ? event.options.modifiers : []
+				const modifiers = rawMods.filter(
+					(m): m is AbstractModifier => m === 'cmdOrCtrl' || m === 'shift' || m === 'alt',
+				)
+				try {
+					await sendShortcutToTidal(rawKey, modifiers)
+				} catch (err) {
+					self.log(
+						'error',
+						`playback_send_shortcut failed (${rawKey}, [${modifiers.join(', ')}]): ${(err as Error).message}`,
+					)
+				}
+			},
+		},
 	}
 
 	self.setActionDefinitions(actions)
+}
+
+function makePlaybackAction(
+	self: ModuleInstance,
+	name: string,
+	key: ShortcutKey,
+	modifiers: AbstractModifier[],
+): CompanionActionDefinitions<ActionsSchema>['playback_play_pause'] {
+	return {
+		name,
+		description:
+			'Brings TIDAL desktop to the front and sends the in-app keyboard shortcut. Window focus is briefly stolen.',
+		options: [],
+		callback: async () => {
+			try {
+				await sendShortcutToTidal(key, modifiers)
+			} catch (err) {
+				self.log('error', `${name} failed: ${(err as Error).message}`)
+			}
+		},
+	}
 }

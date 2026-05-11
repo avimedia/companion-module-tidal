@@ -43,8 +43,28 @@ If a future release adds public "now playing" or playback-control endpoints, ext
 
 ## Notes for Buttons compatibility
 
-- The manifest declares `runtime.permissions.child-process: true` because the *Open URI in TIDAL desktop* actions spawn `open` / `start` / `xdg-open`. Buttons enforces these declared permissions; without the flag, the spawn would be denied.
+- The manifest declares `runtime.permissions.child-process: true` because the module spawns:
+  - `open` / `start` / `xdg-open` for the _Open URI in TIDAL desktop_ actions.
+  - `osascript` (macOS), `powershell` (Windows), or `xdotool` (Linux/X11) for the _Playback:_ actions, which activate the TIDAL window and synthesise keyboard shortcuts.
+
+  Buttons enforces these declared permissions; without the flag, the spawns would be denied.
+
 - The previous module id `tidal-music` is listed in `legacyIds`, so an existing connection from an earlier build will be auto-migrated.
+
+## Playback control
+
+TIDAL's public Web API does not expose a "play on device" endpoint comparable to Spotify Connect. The _Playback:_ actions implement local control by:
+
+1. Bringing the TIDAL desktop window to the foreground.
+2. Synthesising the in-app keyboard shortcut that TIDAL itself listens for (e.g. `Space` for play/pause, `⌘/Ctrl + →` for next track).
+
+This is implemented in [`src/playback.ts`](./src/playback.ts) with per-OS branches:
+
+- **macOS**: `osascript` → `System Events` keystroke
+- **Windows**: PowerShell → `WScript.Shell.AppActivate` + `SendKeys`
+- **Linux (X11)**: `xdotool search --name TIDAL windowactivate --sync key <combo>`
+
+Trade-off: each press briefly steals focus to TIDAL. A non-focus-stealing engine using OS media keys (macOS `MRMediaRemoteSendCommand`, Windows `keybd_event` with `VK_MEDIA_*`, Linux `playerctl`) is on the roadmap for v0.3.0.
 
 ## License
 

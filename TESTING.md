@@ -14,11 +14,11 @@ All shell snippets below assume your terminal's working directory is the **proje
 
 ### Open a terminal
 
-| OS | How |
-| --- | --- |
-| **macOS** | Spotlight (`⌘ Space`) → type `Terminal` → return. Or use *iTerm2* if you prefer. |
-| **Windows** | Press `⊞ Win` → type `PowerShell` → return. *Windows Terminal* is also fine. |
-| **Linux** | Your distro's terminal app, or `Ctrl+Alt+T` on most desktops. |
+| OS          | How                                                                              |
+| ----------- | -------------------------------------------------------------------------------- |
+| **macOS**   | Spotlight (`⌘ Space`) → type `Terminal` → return. Or use _iTerm2_ if you prefer. |
+| **Windows** | Press `⊞ Win` → type `PowerShell` → return. _Windows Terminal_ is also fine.     |
+| **Linux**   | Your distro's terminal app, or `Ctrl+Alt+T` on most desktops.                    |
 
 Pick a folder where you keep code projects. Common choices:
 
@@ -62,7 +62,7 @@ ls                 # expect: companion/  src/  package.json  tsconfig.json  READ
 > cd $HOME\dev\companion-module-tidal  # Windows PowerShell
 > ```
 >
-> The **absolute path** to this folder is also what you'll paste into Companion/Buttons' *Developer modules path* setting in §2A below. Grab it any time with `pwd` (macOS/Linux) or `(Get-Location).Path` (Windows).
+> The **absolute path** to this folder is also what you'll paste into Companion/Buttons' _Developer modules path_ setting in §2A below. Grab it any time with `pwd` (macOS/Linux) or `(Get-Location).Path` (Windows).
 
 ### Updating to a newer version later
 
@@ -74,25 +74,25 @@ corepack yarn@4.12.0 install      # picks up any new/removed dependencies
 corepack yarn@4.12.0 build        # rebuild dist/ so Companion/Buttons sees the changes
 ```
 
-Then restart the TIDAL connection in Companion/Buttons (Connections list → kebab menu → *Restart*) so the new `dist/main.js` is loaded.
+Then restart the TIDAL connection in Companion/Buttons (Connections list → kebab menu → _Restart_) so the new `dist/main.js` is loaded.
 
 ---
 
 ## 1. Prerequisites
 
-| Requirement | Notes |
-| --- | --- |
-| **Node.js 22.x** | Install from <https://nodejs.org> or your package manager of choice. Companion/Buttons ship their own Node runtime; this one is only needed for the build steps. |
-| **Yarn 4** (build/dev only) | Comes with Node 22 via Corepack. All snippets use `corepack yarn@4.12.0 …` so no global install is required. |
-| **A TIDAL developer app** | Create one at <https://developer.tidal.com/dashboard>. Note the Client ID and Client Secret. |
-| **TIDAL desktop app** *(optional)* | Only required to test the "Open URI in TIDAL desktop" actions. macOS/Windows/Linux all support `tidal://` URIs when the desktop client is installed. |
-| **Bitfocus Companion 4.0+** *or* **Bitfocus Buttons** | The connection module ecosystem is shared between the two products. |
+| Requirement                                           | Notes                                                                                                                                                            |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Node.js 22.x**                                      | Install from <https://nodejs.org> or your package manager of choice. Companion/Buttons ship their own Node runtime; this one is only needed for the build steps. |
+| **Yarn 4** (build/dev only)                           | Comes with Node 22 via Corepack. All snippets use `corepack yarn@4.12.0 …` so no global install is required.                                                     |
+| **A TIDAL developer app**                             | Create one at <https://developer.tidal.com/dashboard>. Note the Client ID and Client Secret.                                                                     |
+| **TIDAL desktop app** _(optional)_                    | Only required to test the "Open URI in TIDAL desktop" actions. macOS/Windows/Linux all support `tidal://` URIs when the desktop client is installed.             |
+| **Bitfocus Companion 4.0+** _or_ **Bitfocus Buttons** | The connection module ecosystem is shared between the two products.                                                                                              |
 
 ### TIDAL Developer Portal — one-time setup
 
 1. Sign in at <https://developer.tidal.com/dashboard> with your TIDAL account.
-2. *Create app*. Give it any name (e.g. `Bitfocus Local Test`).
-3. Under *Redirect URIs*, add **exactly**:
+2. _Create app_. Give it any name (e.g. `Bitfocus Local Test`).
+3. Under _Redirect URIs_, add **exactly**:
    ```
    https://bitfocus.github.io/companion-oauth/callback
    ```
@@ -116,13 +116,13 @@ This points the host app at the source folder, so any rebuild is picked up after
    corepack yarn@4.12.0 install
    corepack yarn@4.12.0 build
    ```
-2. Open **Companion** (or **Buttons**) → *Settings* → *Modules*.
-3. Find the **Developer modules path** field (Companion v4 UI calls it *"Modules path"* under *Developer settings*; Buttons exposes it in the same place).
+2. Open **Companion** (or **Buttons**) → _Settings_ → _Modules_.
+3. Find the **Developer modules path** field (Companion v4 UI calls it _"Modules path"_ under _Developer settings_; Buttons exposes it in the same place).
 4. Point it at the **parent directory** that holds this repo, and ensure the repo folder is named `companion-module-tidal` (which is what `git clone` produces by default). For example, if you cloned into `~/dev/companion-module-tidal`, set the path to `~/dev`.
    - If the connection does not appear after restart, try setting the path to the project folder itself instead.
    - Or symlink the repo into a parent folder under the expected name, e.g. `ln -s "$PWD" ../companion-module-tidal` and point the dev path at the parent.
 5. Restart the connections (or the whole app) so the module list is rescanned.
-6. *Connections → Add connection → search "TIDAL"* → the module should appear with **Manufacturer: TIDAL, Product: TIDAL**.
+6. _Connections → Add connection → search "TIDAL"_ → the module should appear with **Manufacturer: TIDAL, Product: TIDAL**.
 
 ### Option B — Drag-in the packaged tgz
 
@@ -134,7 +134,7 @@ Use this when you want a clean install or to share the module with another machi
    corepack yarn@4.12.0 package
    # → writes ./tidal-0.1.0.tgz
    ```
-2. In Companion/Buttons go to *Modules → Import module package* and select `tidal-0.1.0.tgz`.
+2. In Companion/Buttons go to _Modules → Import module package_ and select `tidal-0.1.0.tgz`.
 
 ---
 
@@ -142,15 +142,15 @@ Use this when you want a clean install or to share the module with another machi
 
 After adding the connection you'll see this config UI:
 
-| Field | What to enter |
-| --- | --- |
-| **Authentication mode** | Pick `Client Credentials (catalog only)` for the first round of tests. Switch to `Authorization Code + PKCE` later for user-scoped tests. |
-| **Country code** | Two-letter ISO code matching your TIDAL subscription, e.g. `NO`, `US`, `GB`. TIDAL returns `403`/`401` on most catalog endpoints if this is wrong. |
-| **Client ID** | From the TIDAL developer dashboard. |
-| **Client Secret** | From the TIDAL developer dashboard. |
-| **Scopes** | Default `user.read playlists.read collection.read` works for Authorization Code mode. Ignored by Client Credentials. |
-| **Auth URL** *(read-only)* | Populated automatically once you save with Authorization Code mode selected. Open it in any browser to complete the login. |
-| **Auth status** *(read-only)* | Live status string — also exposed as the `auth_status` variable. |
+| Field                         | What to enter                                                                                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Authentication mode**       | Pick `Client Credentials (catalog only)` for the first round of tests. Switch to `Authorization Code + PKCE` later for user-scoped tests.          |
+| **Country code**              | Two-letter ISO code matching your TIDAL subscription, e.g. `NO`, `US`, `GB`. TIDAL returns `403`/`401` on most catalog endpoints if this is wrong. |
+| **Client ID**                 | From the TIDAL developer dashboard.                                                                                                                |
+| **Client Secret**             | From the TIDAL developer dashboard.                                                                                                                |
+| **Scopes**                    | Default `user.read playlists.read collection.read` works for Authorization Code mode. Ignored by Client Credentials.                               |
+| **Auth URL** _(read-only)_    | Populated automatically once you save with Authorization Code mode selected. Open it in any browser to complete the login.                         |
+| **Auth status** _(read-only)_ | Live status string — also exposed as the `auth_status` variable.                                                                                   |
 
 ### Client-Credentials test (catalog only)
 
@@ -175,6 +175,7 @@ After adding the connection you'll see this config UI:
 Create one Companion/Buttons button per action and verify the corresponding variables update.
 
 ### 4.1 Search catalog
+
 - **Action options:** Query = `daft punk`, Kind = `tracks`, Limit = `10`.
 - **Expected variables after press:**
   - `last_search_query` = `daft punk`
@@ -183,34 +184,95 @@ Create one Companion/Buttons button per action and verify the corresponding vari
   - `last_search_first_id` populated
   - `last_search_first_title` populated
   - `current_track_*` variables populated (because Kind = tracks)
-- **Feedback:** *Last search returned results* should turn green.
+- **Feedback:** _Last search returned results_ should turn green.
 
 Repeat with Kind = `albums`, `artists`, `playlists`, `videos`. Tracks Kind is the only one that auto-populates `current_track_*` — the others just update the `last_search_*` set.
 
 ### 4.2 Load track by ID
+
 - **Action option:** Track ID = `12345` (replace with a real numeric TIDAL track ID; you can grab one from `last_search_first_id` after a tracks search).
 - **Expected:** `current_track_id`, `current_track_title`, `current_track_artists`, `current_track_album`, `current_track_isrc`, `current_track_duration`, `current_track_explicit`, `current_track_uri` all update.
 
 ### 4.3 Load track by ISRC
+
 - **Action option:** ISRC = `USQX91901206` (or any valid ISRC).
 - **Expected:** Same variables as 4.2 update. If TIDAL has no track for that ISRC the log says `No track found for ISRC <code>`.
 
 ### 4.4 Load album by ID / Load playlist by ID
+
 - Album → `current_track_album`, `current_track_artists`, `current_track_uri` update with `tidal://album/<id>`.
 - Playlist → `last_search_first_title` and `current_track_uri` (`tidal://playlist/<uuid>`) update.
 
 ### 4.5 Refresh access token
+
 - Press the button; log should say `Authenticated (expires …)` again with a fresh expiry.
 - For Client-Credentials mode this also tests that a brand-new token is obtainable on demand.
 
-### 4.6 Open URI in TIDAL desktop *(local only)*
+### 4.6 Open URI in TIDAL desktop _(local only)_
+
 - Default option: `tidal://track/$(tidal:current_track_id)`.
 - Press after a successful "Load track" — TIDAL desktop should focus and play the track.
 - macOS spawns `open <uri>`, Windows `start "" <uri>`, Linux `xdg-open <uri>` (see `src/actions.ts → openExternal`).
-- **Buttons specifically:** the module declares `runtime.permissions.child-process: true` in `companion/manifest.json`. If you see *"permission denied"* in the log, the manifest didn't get picked up — rebuild and re-import.
+- **Buttons specifically:** the module declares `runtime.permissions.child-process: true` in `companion/manifest.json`. If you see _"permission denied"_ in the log, the manifest didn't get picked up — rebuild and re-import.
 
 ### 4.7 Open track in TIDAL desktop
+
 - Convenience wrapper for `tidal://track/<id>`. Quick way to chain Load-track → Open-track in a two-step preset.
+
+### 4.8 Playback actions — Play/Pause, Next, Previous, etc. _(v0.2.0+)_
+
+Each Playback action activates the TIDAL desktop window and sends an in-app keyboard shortcut. Test preconditions:
+
+- TIDAL desktop app is **running** (open and signed in).
+- A track or playlist is loaded in TIDAL so you can hear/see the effect.
+- The Companion/Buttons host is on the **same machine** as the TIDAL desktop app (these actions cannot cross machines).
+- On **Linux**, `xdotool` is installed and you're on an **X11** session (Wayland is not supported by this path yet — check with `echo $XDG_SESSION_TYPE`).
+
+Create one button per action and verify:
+
+| Action                           | Default shortcut sent       | Expected effect in TIDAL                                          |
+| -------------------------------- | --------------------------- | ----------------------------------------------------------------- |
+| Playback: Play / Pause           | `Space`                     | Currently playing track toggles between playing and paused        |
+| Playback: Next track             | `⌘/Ctrl + →`                | Skips to the next track in the queue                              |
+| Playback: Previous track         | `⌘/Ctrl + ←`                | Goes to the previous track (or restarts current if past ~3s)      |
+| Playback: Seek forward           | `Shift + →`                 | Seeks forward (~10s in current TIDAL builds)                      |
+| Playback: Seek backward          | `Shift + ←`                 | Seeks backward (~10s)                                             |
+| Playback: Volume up              | `⌘/Ctrl + ↑`                | TIDAL's internal volume increases one step                        |
+| Playback: Volume down            | `⌘/Ctrl + ↓`                | TIDAL's internal volume decreases one step                        |
+| Playback: Toggle mute            | `⌘/Ctrl + M`                | TIDAL mutes/unmutes (verify; the binding can vary across updates) |
+| Playback: Send custom keyboard … | the key + modifiers you set | Whatever TIDAL has bound that shortcut to                         |
+
+**What "works" looks like:**
+
+- The TIDAL window flashes / comes to the front for each press.
+- The shortcut takes effect in TIDAL (track changes, playback toggles, etc.).
+- The previously focused app loses focus to TIDAL — this is expected with the current engine and will be addressed by a non-focus-stealing engine in v0.3.0.
+
+**Troubleshooting per OS:**
+
+- **macOS first run**: macOS prompts for _Accessibility_ permission for whatever process is running `osascript` (Companion or Buttons itself). Approve under _System Settings → Privacy & Security → Accessibility_. If you skip, presses are silently no-ops.
+- **Windows**: if the action seems to do nothing, run `Get-Command powershell` in PowerShell to confirm `powershell` resolves. PowerShell 5.1 (built-in) is what we use; PowerShell 7 (`pwsh`) is **not** required.
+- **Linux**: `which xdotool` must succeed. On Wayland (`echo $XDG_SESSION_TYPE` returns `wayland`), `xdotool` won't work and these actions will fail silently.
+- **All OS**: confirm the connection has `child-process` permission. Companion grants it automatically from `companion/manifest.json`; Buttons enforces it strictly. If denied, the log will show `child_process spawn denied`.
+
+**Quick smoke-test sequence (~30s):**
+
+1. Start a track playing in TIDAL.
+2. Press **Play / Pause** → audio stops.
+3. Press **Play / Pause** again → audio resumes.
+4. Press **Next track** → moves to next track.
+5. Press **Volume down** twice → audible drop.
+6. Press **Volume up** twice → audible rise.
+
+If any step fails, check the connection log for the specific error string (`osascript`, `powershell`, or `xdotool` will appear in the error message and tell you which platform branch failed).
+
+### 4.9 Playback: Send custom keyboard shortcut
+
+Use this to bind any TIDAL shortcut we haven't wrapped explicitly.
+
+- **Action options:** Key = `f` (or any key from the dropdown), Modifiers = `[]` (or any combination).
+- **Expected:** TIDAL window activates and receives `F` (which favorites the current track in current builds), or whatever shortcut you chose.
+- **Use case:** custom power-user mappings without needing a module update.
 
 ---
 
@@ -218,16 +280,18 @@ Repeat with Kind = `albums`, `artists`, `playlists`, `videos`. Tracks Kind is th
 
 Apply each as a button feedback and confirm the colour switches:
 
-| Feedback | True when… | Default style |
-| --- | --- | --- |
-| `TIDAL is authenticated` | Module holds a non-expired access token. | green bg |
-| `Last search returned results` | Most recent search returned ≥ 1 result. | blue bg |
-| `Loaded track is explicit` | The currently loaded track has `explicit: true`. | red bg |
+| Feedback                       | True when…                                       | Default style |
+| ------------------------------ | ------------------------------------------------ | ------------- |
+| `TIDAL is authenticated`       | Module holds a non-expired access token.         | green bg      |
+| `Last search returned results` | Most recent search returned ≥ 1 result.          | blue bg       |
+| `Loaded track is explicit`     | The currently loaded track has `explicit: true`. | red bg        |
 
 Use the bundled presets to get a quick visual confirmation:
-- *Status / TIDAL authentication state* (also acts as a one-tap **Refresh access token** button).
-- *Search / Search first result* (turns green when there are results).
-- *Loaded track / Now-loaded track title* (turns red when explicit).
+
+- _Status / TIDAL authentication state_ (also acts as a one-tap **Refresh access token** button).
+- _Search / Search first result_ (turns green when there are results).
+- _Loaded track / Now-loaded track title_ (turns red when explicit).
+- _Transport / Play-Pause, Next, Previous, Volume ± , Mute_ — drag onto a button page for an instant transport bar.
 
 ---
 
@@ -274,15 +338,15 @@ Whenever you change `src/`, restart the connection in Companion/Buttons to pick 
 
 ## 8. Troubleshooting checklist
 
-| Symptom | Likely cause / fix |
-| --- | --- |
-| Module not visible in *Add connection* picker | Developer modules path is wrong, or the folder isn't named `companion-module-tidal`. Try the symlink workaround in §2A. |
-| Status badge: *Bad config / Missing Client ID/Secret* | Empty Client ID or Client Secret in the connection config. |
-| Status badge: *Awaiting user login* (Authorization Code) | Open the `Auth URL` from the config field in any browser. |
-| `403`/`401` on every API call | Wrong `countryCode`, or the access token does not have the required scope for that endpoint. |
-| `permission denied` on `open_tidal_uri` (Buttons) | Manifest's `runtime.permissions.child-process` is missing or didn't get re-imported. Rebuild and re-import the tgz. |
-| `Failed to open URI` (any OS) | TIDAL desktop app isn't installed, or the `tidal://` scheme isn't registered. Install <https://tidal.com/download>. |
-| `Token refresh failed: …` after a long idle | Refresh token rotated/expired. Re-run the Authorization Code flow (blank Client Secret → save → paste back → save). |
+| Symptom                                                  | Likely cause / fix                                                                                                      |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Module not visible in _Add connection_ picker            | Developer modules path is wrong, or the folder isn't named `companion-module-tidal`. Try the symlink workaround in §2A. |
+| Status badge: _Bad config / Missing Client ID/Secret_    | Empty Client ID or Client Secret in the connection config.                                                              |
+| Status badge: _Awaiting user login_ (Authorization Code) | Open the `Auth URL` from the config field in any browser.                                                               |
+| `403`/`401` on every API call                            | Wrong `countryCode`, or the access token does not have the required scope for that endpoint.                            |
+| `permission denied` on `open_tidal_uri` (Buttons)        | Manifest's `runtime.permissions.child-process` is missing or didn't get re-imported. Rebuild and re-import the tgz.     |
+| `Failed to open URI` (any OS)                            | TIDAL desktop app isn't installed, or the `tidal://` scheme isn't registered. Install <https://tidal.com/download>.     |
+| `Token refresh failed: …` after a long idle              | Refresh token rotated/expired. Re-run the Authorization Code flow (blank Client Secret → save → paste back → save).     |
 
 ---
 
@@ -296,7 +360,7 @@ corepack yarn@4.12.0 install
 corepack yarn@4.12.0 build
 ```
 
-To remove the connection from Companion/Buttons: *Connections → TIDAL → Remove*. To delete the module entirely from the host app, also clear the Developer modules path or remove the `.tgz` you imported.
+To remove the connection from Companion/Buttons: _Connections → TIDAL → Remove_. To delete the module entirely from the host app, also clear the Developer modules path or remove the `.tgz` you imported.
 
 ---
 
