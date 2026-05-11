@@ -1,28 +1,34 @@
 # TIDAL module — testing & installation guide
 
-This is a private working document. It walks through everything needed to install the module into a local Bitfocus Companion or Bitfocus Buttons instance and exercise every action, feedback, and variable it exposes.
+This guide walks through installing this module into a local Bitfocus Companion or Bitfocus Buttons instance and exercising every action, feedback, and variable it exposes.
 
-Repo: <https://github.com/avimedia/companion-module-tidal>
-Module folder on disk: `/Users/erlendvage/Developer/Tidal for Buttons and Companion`
-Module id (manifest): `tidal`
-Legacy id auto-migrated: `tidal-music`
+- Repository: <https://github.com/avimedia/companion-module-tidal>
+- Module id (from `companion/manifest.json`): `tidal`
+- Legacy id auto-migrated: `tidal-music`
+
+All shell snippets below assume you have cloned the repo and your working directory is the project root:
+
+```bash
+git clone https://github.com/avimedia/companion-module-tidal.git
+cd companion-module-tidal
+```
 
 ---
 
 ## 1. Prerequisites
 
-| Requirement | How to get it |
+| Requirement | Notes |
 | --- | --- |
-| **Node.js 22.x** | `brew install node@22` or use the Node already bundled with Companion/Buttons. |
-| **Yarn 4** (only for dev/build steps) | Comes with Node 22 via Corepack. We invoke it via `corepack yarn@4.12.0 …` so no global install is required. |
+| **Node.js 22.x** | Install from <https://nodejs.org> or your package manager of choice. Companion/Buttons ship their own Node runtime; this one is only needed for the build steps. |
+| **Yarn 4** (build/dev only) | Comes with Node 22 via Corepack. All snippets use `corepack yarn@4.12.0 …` so no global install is required. |
 | **A TIDAL developer app** | Create one at <https://developer.tidal.com/dashboard>. Note the Client ID and Client Secret. |
-| **TIDAL desktop app** *(optional)* | Only required if you want to test the "Open URI in TIDAL desktop" actions. macOS/Windows/Linux all support `tidal://` URIs when the desktop client is installed. |
+| **TIDAL desktop app** *(optional)* | Only required to test the "Open URI in TIDAL desktop" actions. macOS/Windows/Linux all support `tidal://` URIs when the desktop client is installed. |
 | **Bitfocus Companion 4.0+** *or* **Bitfocus Buttons** | The connection module ecosystem is shared between the two products. |
 
 ### TIDAL Developer Portal — one-time setup
 
 1. Sign in at <https://developer.tidal.com/dashboard> with your TIDAL account.
-2. *Create app*. Give it a name (e.g. `Bitfocus Local Test`).
+2. *Create app*. Give it any name (e.g. `Bitfocus Local Test`).
 3. Under *Redirect URIs*, add **exactly**:
    ```
    https://bitfocus.github.io/companion-oauth/callback
@@ -30,7 +36,7 @@ Legacy id auto-migrated: `tidal-music`
    This is the Bitfocus-hosted redirector. It is only needed for the **Authorization Code + PKCE** mode (user-scoped data). Client-Credentials mode does not use a redirect URI at all.
 4. Copy the **Client ID** and the **Client Secret**.
 
-> ⚠️ The Client Secret is sensitive. The module currently stores it in the connection config (matches the upstream `companion-module-template-ts`). Companion/Buttons keeps that config server-side, but treat the secret as you would a password — don't paste it into screenshots, chat logs, or shared notes.
+> ⚠️ The Client Secret is sensitive. The module currently stores it in the connection config (matches the upstream `companion-module-template-ts`). Companion/Buttons keep that config server-side, but treat the secret as you would a password — don't paste it into screenshots, chat logs, or shared notes.
 
 ---
 
@@ -44,21 +50,16 @@ This points the host app at the source folder, so any rebuild is picked up after
 
 1. Make sure the build output exists:
    ```bash
-   cd "/Users/erlendvage/Developer/Tidal for Buttons and Companion"
    corepack yarn@4.12.0 install
    corepack yarn@4.12.0 build
    ```
 2. Open **Companion** (or **Buttons**) → *Settings* → *Modules*.
 3. Find the **Developer modules path** field (Companion v4 UI calls it *"Modules path"* under *Developer settings*; Buttons exposes it in the same place).
-4. Set it to:
-   ```
-   /Users/erlendvage/Developer/Tidal for Buttons and Companion
-   ```
-   ⚠️ Companion expects the value to be the **parent folder** that contains module folders, *or* the module folder itself depending on version. If the connection does not appear after restart:
-   - Try setting the path to `/Users/erlendvage/Developer` and renaming the project folder to `companion-module-tidal` (Bitfocus's expected naming).
-   - Or just symlink: `ln -s "/Users/erlendvage/Developer/Tidal for Buttons and Companion" /Users/erlendvage/Developer/companion-module-tidal` and point the dev path at `/Users/erlendvage/Developer`.
+4. Point it at the **parent directory** that holds this repo, and ensure the repo folder is named `companion-module-tidal` (which is what `git clone` produces by default). For example, if you cloned into `~/dev/companion-module-tidal`, set the path to `~/dev`.
+   - If the connection does not appear after restart, try setting the path to the project folder itself instead.
+   - Or symlink the repo into a parent folder under the expected name, e.g. `ln -s "$PWD" ../companion-module-tidal` and point the dev path at the parent.
 5. Restart the connections (or the whole app) so the module list is rescanned.
-6. *Connections → Add connection → search "TIDAL" →* the module should appear with **Manufacturer: TIDAL, Product: TIDAL**.
+6. *Connections → Add connection → search "TIDAL"* → the module should appear with **Manufacturer: TIDAL, Product: TIDAL**.
 
 ### Option B — Drag-in the packaged tgz
 
@@ -66,7 +67,6 @@ Use this when you want a clean install or to share the module with another machi
 
 1. Build the package:
    ```bash
-   cd "/Users/erlendvage/Developer/Tidal for Buttons and Companion"
    corepack yarn@4.12.0 install
    corepack yarn@4.12.0 package
    # → writes ./tidal-0.1.0.tgz
@@ -190,8 +190,6 @@ current_user_id        current_user_name         current_user_country
 ## 7. Iterating locally
 
 ```bash
-cd "/Users/erlendvage/Developer/Tidal for Buttons and Companion"
-
 # One-time setup
 corepack yarn@4.12.0 install
 
@@ -215,11 +213,10 @@ Whenever you change `src/`, restart the connection in Companion/Buttons to pick 
 
 | Symptom | Likely cause / fix |
 | --- | --- |
-| Module not visible in *Add connection* picker | Developer modules path is wrong, or the folder isn't named like `companion-module-tidal`. Try the symlink workaround in §2A. |
+| Module not visible in *Add connection* picker | Developer modules path is wrong, or the folder isn't named `companion-module-tidal`. Try the symlink workaround in §2A. |
 | Status badge: *Bad config / Missing Client ID/Secret* | Empty Client ID or Client Secret in the connection config. |
 | Status badge: *Awaiting user login* (Authorization Code) | Open the `Auth URL` from the config field in any browser. |
 | `403`/`401` on every API call | Wrong `countryCode`, or the access token does not have the required scope for that endpoint. |
-| `Co-authored-by: Cursor` shows up on any new commit | Cursor agent commit attribution is enabled. Disable it in *Cursor → Settings* (search "co-author"). Alternatively, amend the commit locally: `git commit --amend -m "$(git log -1 --format=%B | grep -v '^Co-authored-by: Cursor')" --no-verify`. |
 | `permission denied` on `open_tidal_uri` (Buttons) | Manifest's `runtime.permissions.child-process` is missing or didn't get re-imported. Rebuild and re-import the tgz. |
 | `Failed to open URI` (any OS) | TIDAL desktop app isn't installed, or the `tidal://` scheme isn't registered. Install <https://tidal.com/download>. |
 | `Token refresh failed: …` after a long idle | Refresh token rotated/expired. Re-run the Authorization Code flow (blank Client Secret → save → paste back → save). |
@@ -228,11 +225,9 @@ Whenever you change `src/`, restart the connection in Companion/Buttons to pick 
 
 ## 9. After-test cleanup
 
-If you want to start completely fresh:
+If you want to start completely fresh from the project root:
 
 ```bash
-# Wipe local build artefacts & deps
-cd "/Users/erlendvage/Developer/Tidal for Buttons and Companion"
 rm -rf node_modules dist .yarn yarn.lock *.tgz
 corepack yarn@4.12.0 install
 corepack yarn@4.12.0 build
