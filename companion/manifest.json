@@ -1,0 +1,30 @@
+{
+	"$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+	"type": "connection",
+	"id": "tidal",
+	"name": "tidal",
+	"shortname": "TIDAL",
+	"description": "Authenticate against TIDAL, search the catalog, look up tracks/albums/playlists, and launch tidal:// URIs in the TIDAL desktop client. Works in Bitfocus Companion and Bitfocus Buttons.",
+	"version": "0.1.0",
+	"license": "MIT",
+	"repository": "git+https://github.com/bitfocus/companion-module-tidal.git",
+	"bugs": "https://github.com/bitfocus/companion-module-tidal/issues",
+	"maintainers": [
+		{
+			"name": "Erlend Vage",
+		}
+	],
+	"runtime": {
+		"type": "node22",
+		"api": "nodejs-ipc",
+		"apiVersion": "0.0.0",
+		"entrypoint": "../dist/main.js",
+		"permissions": {
+			"child-process": true
+		}
+	},
+	"legacyIds": ["tidal-music"],
+	"manufacturer": "TIDAL",
+	"products": ["TIDAL"],
+	"keywords": ["music", "streaming", "tidal", "audio", "catalog", "buttons", "companion"]
+}

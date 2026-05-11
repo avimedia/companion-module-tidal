@@ -1,0 +1,38 @@
+{
+	"name": "companion-module-tidal",
+	"version": "0.1.0",
+	"main": "dist/main.js",
+	"type": "module",
+	"scripts": {
+		"format": "prettier -w .",
+		"package": "yarn build && companion-module-build",
+		"build": "rimraf dist && yarn build:main",
+		"build:main": "tsc -p tsconfig.build.json",
+		"dev": "tsc -p tsconfig.build.json --watch",
+		"lint:raw": "eslint",
+		"lint": "yarn lint:raw ."
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bitfocus/companion-module-tidal.git"
+	},
+	"engines": {
+		"node": "^22.20",
+		"yarn": "^4"
+	},
+	"dependencies": {
+		"@companion-module/base": "~2.0.4"
+	},
+	"devDependencies": {
+		"@companion-module/tools": "^3.0.1",
+		"@types/node": "^22.19.17",
+		"eslint": "^9.39.4",
+		"prettier": "^3.8.3",
+		"rimraf": "^6.1.3",
+		"typescript": "~5.9.2",
+		"typescript-eslint": "^8.59.0"
+	},
+	"prettier": "@companion-module/tools/.prettierrc.json",
+	"packageManager": "yarn@4.12.0"
+}
