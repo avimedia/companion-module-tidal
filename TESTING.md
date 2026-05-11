@@ -6,12 +6,55 @@ This guide walks through installing this module into a local Bitfocus Companion 
 - Module id (from `companion/manifest.json`): `tidal`
 - Legacy id auto-migrated: `tidal-music`
 
-All shell snippets below assume you have cloned the repo and your working directory is the project root:
+All shell snippets below assume your terminal's working directory is the **project root** (the folder containing `package.json` and the `src/` directory). The next section explains how to get there.
+
+---
+
+## 0. Get the project on disk
+
+Pick a folder where you keep code projects. Common choices:
+
+- macOS: `~/Developer` or `~/dev`
+- Linux: `~/dev` or `~/code`
+- Windows: `C:\dev` or `%USERPROFILE%\source`
+
+Create that parent folder if it doesn't exist, move into it, clone the repo, and move into the resulting project folder:
+
+### macOS / Linux (zsh, bash)
 
 ```bash
+mkdir -p ~/dev
+cd ~/dev
 git clone https://github.com/avimedia/companion-module-tidal.git
 cd companion-module-tidal
 ```
+
+### Windows (PowerShell)
+
+```powershell
+mkdir $HOME\dev -Force
+cd $HOME\dev
+git clone https://github.com/avimedia/companion-module-tidal.git
+cd companion-module-tidal
+```
+
+### Verify you're in the right place
+
+After the final `cd`, the project root should look like this:
+
+```bash
+pwd                # expect: …/dev/companion-module-tidal
+ls                 # expect: companion/  src/  package.json  tsconfig.json  README.md  TESTING.md  …
+```
+
+> Every later snippet in this document assumes `pwd` ends in `companion-module-tidal`. If you open a new terminal tab/window later, you'll need to `cd` back into this folder first — shell `cd` does not persist across windows. A quick way to teleport back:
+>
+> ```bash
+> cd ~/dev/companion-module-tidal      # macOS/Linux
+> cd $HOME\dev\companion-module-tidal  # Windows PowerShell
+> ```
+>
+> The **absolute path** to this folder is also what you'll paste into Companion/Buttons' *Developer modules path* setting in §2A below. Grab it any time with `pwd` (macOS/Linux) or `(Get-Location).Path` (Windows).
 
 ---
 
@@ -225,18 +268,13 @@ Whenever you change `src/`, restart the connection in Companion/Buttons to pick 
 
 ## 9. After-test cleanup
 
-If you want to start completely fresh, make sure you're in the project root first:
+If you want to start completely fresh from the project root:
 
 ```bash
-cd ~/dev/companion-module-tidal              # macOS/Linux
-# cd $HOME\dev\companion-module-tidal        # Windows PowerShell
-
 rm -rf node_modules dist .yarn yarn.lock *.tgz
 corepack yarn@4.12.0 install
 corepack yarn@4.12.0 build
 ```
-
-> ⚠️ The `rm -rf` deletes only build artefacts and dependency caches — never run it in a parent directory or you'll wipe more than intended. The line above is deliberately scoped to files inside `companion-module-tidal`.
 
 To remove the connection from Companion/Buttons: *Connections → TIDAL → Remove*. To delete the module entirely from the host app, also clear the Developer modules path or remove the `.tgz` you imported.
 
