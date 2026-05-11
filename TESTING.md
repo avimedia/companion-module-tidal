@@ -12,6 +12,14 @@ All shell snippets below assume your terminal's working directory is the **proje
 
 ## 0. Get the project on disk
 
+### Open a terminal
+
+| OS | How |
+| --- | --- |
+| **macOS** | Spotlight (`⌘ Space`) → type `Terminal` → return. Or use *iTerm2* if you prefer. |
+| **Windows** | Press `⊞ Win` → type `PowerShell` → return. *Windows Terminal* is also fine. |
+| **Linux** | Your distro's terminal app, or `Ctrl+Alt+T` on most desktops. |
+
 Pick a folder where you keep code projects. Common choices:
 
 - macOS: `~/Developer` or `~/dev`
@@ -55,6 +63,18 @@ ls                 # expect: companion/  src/  package.json  tsconfig.json  READ
 > ```
 >
 > The **absolute path** to this folder is also what you'll paste into Companion/Buttons' *Developer modules path* setting in §2A below. Grab it any time with `pwd` (macOS/Linux) or `(Get-Location).Path` (Windows).
+
+### Updating to a newer version later
+
+From the project root:
+
+```bash
+git pull
+corepack yarn@4.12.0 install      # picks up any new/removed dependencies
+corepack yarn@4.12.0 build        # rebuild dist/ so Companion/Buttons sees the changes
+```
+
+Then restart the TIDAL connection in Companion/Buttons (Connections list → kebab menu → *Restart*) so the new `dist/main.js` is loaded.
 
 ---
 
