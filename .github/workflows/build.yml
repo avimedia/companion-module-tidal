@@ -1,0 +1,50 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Lint + typecheck + package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Build (tsc)
+        run: yarn build
+
+      - name: Package (companion-module-build)
+        run: yarn package
+
+      - name: Upload module package
+        uses: actions/upload-artifact@v4
+        with:
+          name: companion-module-tidal-pkg
+          path: pkg/*.tgz
+          if-no-files-found: warn
+          retention-days: 30

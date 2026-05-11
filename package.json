@@ -15,7 +15,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/bitfocus/companion-module-tidal.git"
+		"url": "git+https://github.com/avimedia/companion-module-tidal.git"
 	},
 	"engines": {
 		"node": "^22.20",
