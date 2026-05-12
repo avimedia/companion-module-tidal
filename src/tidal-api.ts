@@ -6,14 +6,31 @@ export type TidalResource = {
 	id: string
 	type: string
 	attributes?: Record<string, unknown>
+	relationships?: Record<string, { data?: TidalRelationshipRef | TidalRelationshipRef[]; links?: TidalLinks }>
+}
+
+export type TidalRelationshipRef = { id: string; type: string }
+
+export type TidalLinks = {
+	self?: string
+	next?: string
+	prev?: string
 }
 
 export type TidalSearchResponse = {
-	data?: TidalResource[]
+	data?: TidalResource[] | TidalResource
 	included?: TidalResource[]
+	links?: TidalLinks
 }
 
 export type SearchKind = 'tracks' | 'albums' | 'artists' | 'playlists' | 'videos'
+
+// Conservative hard cap on how many pages we'll follow when paginating a
+// library list. 100 pages × 20 items/page = 2 000 entries — well past any
+// realistic personal-library size and still bounded against pathological
+// cursor loops or runaway accounts.
+const MAX_PAGES = 100
+const DEFAULT_PAGE_SIZE = 20
 
 // Per-request timeout for the catalog API. Catalog responses are typically
 // sub-second; 15 s bounds the worst case while still tolerating slow networks.
@@ -114,5 +131,91 @@ export class TidalApi {
 
 	async getCurrentUser(): Promise<TidalSearchResponse> {
 		return (await this.request('/users/me')) as TidalSearchResponse
+	}
+
+	// Owned playlists. The v2 API exposes no `/users/me/playlists` shortcut, so
+	// we filter the general /playlists endpoint by owner id. Cursor pagination
+	// is followed automatically up to MAX_PAGES.
+	async listOwnedPlaylists(userId: string, countryCode: string): Promise<TidalResource[]> {
+		if (!userId) return []
+		return this.collectPaginated(`/playlists`, {
+			countryCode,
+			'filter[owners.id]': userId,
+			'page[size]': String(DEFAULT_PAGE_SIZE),
+		})
+	}
+
+	// Items (tracks/videos) inside a specific playlist. `include=items` hydrates
+	// each item's attributes inline under the `included` array — we merge those
+	// back into a flat track-shaped list keyed by the relationship order.
+	async listPlaylistItems(playlistId: string, countryCode: string, maxItems: number = 200): Promise<TidalResource[]> {
+		if (!playlistId) return []
+		const path = `/playlists/${encodeURIComponent(playlistId)}/relationships/items`
+		const refs = await this.collectPaginated(
+			path,
+			{ countryCode, 'page[size]': String(DEFAULT_PAGE_SIZE), include: 'items' },
+			maxItems,
+		)
+
+		// The relationships endpoint returns refs (`{id, type}`) in `data` and
+		// the full resource attributes in `included`. We zip them back together
+		// preserving playlist order.
+		const hydratedById = new Map<string, TidalResource>()
+		for (const page of this.lastIncludedAccumulator) {
+			hydratedById.set(`${page.type}:${page.id}`, page)
+		}
+
+		const ordered: TidalResource[] = []
+		for (const ref of refs) {
+			const hydrated = hydratedById.get(`${ref.type}:${ref.id}`)
+			if (hydrated) ordered.push(hydrated)
+			else ordered.push(ref)
+		}
+		return ordered
+	}
+
+	// Buffer used by `listPlaylistItems` to surface the `included` blobs from
+	// every page of a paginated response back to the caller. Reset on each
+	// `collectPaginated` invocation that's called from a hydrating list method.
+	private lastIncludedAccumulator: TidalResource[] = []
+
+	private async collectPaginated(
+		startPath: string,
+		query: Record<string, string | undefined>,
+		maxItems: number = Number.POSITIVE_INFINITY,
+	): Promise<TidalResource[]> {
+		this.lastIncludedAccumulator = []
+		const out: TidalResource[] = []
+		let nextPath: string | undefined = startPath
+		let nextQuery: Record<string, string | undefined> | undefined = query
+		let pages = 0
+
+		while (nextPath && pages < MAX_PAGES && out.length < maxItems) {
+			const response = (await this.request(nextPath, nextQuery)) as TidalSearchResponse
+			pages++
+			const data = response.data
+			if (Array.isArray(data)) {
+				for (const item of data) {
+					out.push(item)
+					if (out.length >= maxItems) break
+				}
+			} else if (data && typeof data === 'object') {
+				out.push(data)
+			}
+			if (Array.isArray(response.included)) {
+				this.lastIncludedAccumulator.push(...response.included)
+			}
+
+			const next = response.links?.next
+			if (!next) break
+			// `next` may be a fully-qualified URL or a relative path; the
+			// request() helper handles both shapes.
+			nextPath = next
+			// All cursor params are encoded into the `next` URL, so we no
+			// longer need our own query parameters.
+			nextQuery = undefined
+		}
+
+		return out
 	}
 }

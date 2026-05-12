@@ -37,9 +37,22 @@ src/
 
 ## Notes on the TIDAL API
 
-TIDAL's public Web API (`openapi.tidal.com/v2`) is JSON:API-shaped and currently focuses on catalog data. Authorization uses OAuth 2.1 with PKCE on the authorization-code flow.
+TIDAL's public Web API (`openapi.tidal.com/v2`) is JSON:API-shaped, cursor-paginated, and currently focuses on catalog data. Authorization uses OAuth 2.1 with PKCE on the authorization-code flow.
+
+There is **no `/users/me` endpoint** in the v2 API (despite the v1-era convention). To list a user's owned playlists, the module decodes the JWT access token's `sub` claim to recover the user ID, then filters the catalog: `GET /playlists?filter[owners.id]={userId}`. Pagination follows the `links.next` cursor up to a hard cap (`MAX_PAGES = 100`, ≈ 2 000 entries).
+
+User-library features (owned playlists, playlist track listing, search-result slots) are gated behind **Authorization Code** mode. In **Client Credentials** mode the dynamic dropdowns soft-degrade to "— Run Refresh user library first —" and the catalog actions remain fully functional.
 
 If a future release adds public "now playing" or playback-control endpoints, extend `src/tidal-api.ts` and add corresponding actions/feedbacks rather than fanning out new files.
+
+## Library workflow
+
+The module ships an end-to-end "discover → assign → play" flow for user playlists:
+
+1. **Refresh user library** action — fetches all your owned playlists in one call (paginated transparently), caches them, and re-emits both the `play_playlist` dropdown and a "Your playlists" preset section so each playlist appears as a draggable preset.
+2. **Play playlist** action — single dropdown of your cached playlists; runs `tidal://playlist/<id>` through the OS handler.
+3. **Load playlist tracks into variables** action — fetches up to 32 tracks of the chosen playlist and publishes them as `playlist_track_1_*` … `playlist_track_32_*` variables. The "Current playlist tracks" preset section is regenerated with their titles, so users drag tracks 1–N straight onto buttons.
+4. **Play search result (by index)** — companion to _Search catalog_; each search additionally publishes the top 10 results as `last_search_result_N_*` variables and a 10-button preset section. Two-button workflow: _Search X_ on one button, _Play 1st result_ on another.
 
 ## Notes for Buttons compatibility
 

@@ -1,7 +1,8 @@
-import type { CompanionActionDefinitions } from '@companion-module/base'
+import type { CompanionActionDefinitions, DropdownChoice } from '@companion-module/base'
 import { execFile } from 'node:child_process'
 import { platform } from 'node:process'
 import type ModuleInstance from './main.js'
+import { PLAYLIST_TRACK_SLOTS, SEARCH_RESULT_SLOTS } from './main.js'
 import type { SearchKind } from './tidal-api.js'
 import {
 	type AbstractModifier,
@@ -23,6 +24,10 @@ export type ActionsSchema = {
 	load_album: { options: { id: string } }
 	load_playlist: { options: { id: string } }
 	refresh_token: { options: Record<string, never> }
+	refresh_library: { options: Record<string, never> }
+	play_playlist: { options: { playlistId: string } }
+	load_playlist_into_variables: { options: { playlistId: string; count: number } }
+	play_search_result: { options: { index: number } }
 	open_tidal_uri: { options: { uri: string } }
 	open_track_in_desktop: { options: { id: string } }
 	playback_play_pause: { options: PlaybackActionOptions }
@@ -195,6 +200,97 @@ export function UpdateActions(self: ModuleInstance): void {
 				await self.refreshTokenNow()
 			},
 		},
+		refresh_library: {
+			name: 'Refresh user library (playlists)',
+			description:
+				'Re-fetch your owned playlists from TIDAL and repopulate the "Your playlists" dropdown and preset section. Requires Authorization Code mode — Client Credentials cannot see user-scoped data.',
+			options: [],
+			callback: async () => {
+				await self.refreshLibrary()
+			},
+		},
+		play_playlist: {
+			name: 'Play playlist (from your library)',
+			description:
+				'Launches tidal://playlist/<id> in the TIDAL desktop app for a playlist you own. The dropdown is populated from the most recent library refresh; run "Refresh user library" if you don\'t see a freshly-created playlist.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'playlistId',
+					label: 'Playlist',
+					default: '',
+					choices: buildPlaylistChoices(self),
+					allowCustom: true,
+				},
+			],
+			callback: async (event) => {
+				const id = String(event.options.playlistId ?? '').trim()
+				if (!id) {
+					self.log('warn', 'play_playlist called with no playlist selected')
+					return
+				}
+				try {
+					await openExternal(`tidal://playlist/${id}`)
+					self.log('info', `Opened playlist ${id} in TIDAL`)
+				} catch (err) {
+					self.log('error', `play_playlist failed for ${id}: ${(err as Error).message}`)
+				}
+			},
+		},
+		load_playlist_into_variables: {
+			name: 'Load playlist tracks into variables',
+			description:
+				'Fetch up to N tracks of the chosen playlist and publish them as playlist_track_1_* … playlist_track_N_* variables. Also regenerates the "Current playlist tracks" preset section so each track can be dragged onto a button.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'playlistId',
+					label: 'Playlist',
+					default: '',
+					choices: buildPlaylistChoices(self),
+					allowCustom: true,
+				},
+				{
+					type: 'number',
+					id: 'count',
+					label: `Tracks to load (max ${PLAYLIST_TRACK_SLOTS})`,
+					default: PLAYLIST_TRACK_SLOTS,
+					min: 1,
+					max: PLAYLIST_TRACK_SLOTS,
+				},
+			],
+			callback: async (event) => {
+				const id = String(event.options.playlistId ?? '').trim()
+				const rawCount = Number(event.options.count ?? PLAYLIST_TRACK_SLOTS)
+				const count = Number.isFinite(rawCount)
+					? Math.max(1, Math.min(PLAYLIST_TRACK_SLOTS, Math.trunc(rawCount)))
+					: PLAYLIST_TRACK_SLOTS
+				if (!id) {
+					self.log('warn', 'load_playlist_into_variables called with no playlist selected')
+					return
+				}
+				await self.loadPlaylistIntoVariables(id, count)
+			},
+		},
+		play_search_result: {
+			name: 'Play search result (by index)',
+			description: `Plays the Nth result of the most recent search (1-${SEARCH_RESULT_SLOTS}). Useful for "Search X" → "Play 1st result" two-button workflows.`,
+			options: [
+				{
+					type: 'number',
+					id: 'index',
+					label: `Result index (1-${SEARCH_RESULT_SLOTS})`,
+					default: 1,
+					min: 1,
+					max: SEARCH_RESULT_SLOTS,
+				},
+			],
+			callback: async (event) => {
+				const rawIndex = Number(event.options.index ?? 1)
+				const index = Number.isFinite(rawIndex) ? Math.max(1, Math.min(SEARCH_RESULT_SLOTS, Math.trunc(rawIndex))) : 1
+				await self.playSearchResult(index)
+			},
+		},
 		open_tidal_uri: {
 			name: 'Open URI in TIDAL desktop app',
 			description:
@@ -331,6 +427,25 @@ function makePlaybackAction(
 			await dispatchPlayback(self, name, { type: semantic }, engine)
 		},
 	}
+}
+
+// Computes the playlist-dropdown choices from the module's library cache.
+// Called fresh every time UpdateActions runs, so a refresh_library invocation
+// (which calls self.updateActions()) repopulates the UI dropdown without
+// requiring a Companion reload. The first entry is a "no selection" sentinel
+// so users get a clear hint when the library hasn't been refreshed yet.
+function buildPlaylistChoices(self: ModuleInstance): DropdownChoice[] {
+	const placeholder: DropdownChoice =
+		self.playlistCache.length === 0
+			? { id: '', label: '— Run "Refresh user library" first (Authorization Code mode) —' }
+			: { id: '', label: '— Select a playlist —' }
+	return [
+		placeholder,
+		...self.playlistCache.map((p) => ({
+			id: p.id,
+			label: p.numberOfItems > 0 ? `${p.name} (${p.numberOfItems} tracks)` : p.name,
+		})),
+	]
 }
 
 async function dispatchPlayback(

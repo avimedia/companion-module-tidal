@@ -1,8 +1,15 @@
 import { combineRgb } from '@companion-module/base'
 import type ModuleInstance from './main.js'
 import type { ModuleSchema } from './main.js'
+import { PLAYLIST_TRACK_SLOTS, SEARCH_RESULT_SLOTS } from './main.js'
 import type { CompanionPresetDefinitions, CompanionPresetSection } from '@companion-module/base'
 import { PLAYBACK_ENGINE_DEFAULT_CHOICE } from './playback.js'
+
+// Cap how many "Your playlists" presets we emit. The Companion preset library
+// renders fine up to several hundred, but past ~300 the scroll experience
+// degrades; users with very large libraries can still use the play_playlist
+// dropdown for the long tail. (The dropdown is unlimited.)
+const MAX_PLAYLIST_PRESETS = 300
 
 // Frozen so a single shared reference cannot be accidentally mutated by callers
 // across the 8 transport presets that share it.
@@ -231,6 +238,90 @@ export function UpdatePresets(self: ModuleInstance): void {
 		},
 	}
 
+	// "Your playlists" — one auto-generated preset per cached playlist. Names
+	// are sanitised to fit a button cell at the auto size; the actual TIDAL
+	// playlist name is also surfaced via $(tidal:last_loaded_playlist_name)
+	// once the user triggers a load.
+	const playlistPresetIds: string[] = []
+	for (const playlist of self.playlistCache.slice(0, MAX_PLAYLIST_PRESETS)) {
+		const presetId = `library_playlist_${playlist.id}`
+		playlistPresetIds.push(presetId)
+		presets[presetId as keyof typeof presets] = {
+			type: 'simple',
+			name: `Playlist: ${playlist.name}`,
+			style: {
+				text: `♪\n${truncate(playlist.name, 40)}`,
+				size: 'auto',
+				color: combineRgb(255, 255, 255),
+				bgcolor: combineRgb(0, 64, 128),
+			},
+			steps: [
+				{
+					down: [{ actionId: 'play_playlist', options: { playlistId: playlist.id } }],
+					up: [],
+				},
+			],
+			feedbacks: [],
+		}
+	}
+
+	// "Current playlist tracks" — N fixed presets that reference the
+	// playlist_track_<n>_* variable family. They render empty until the user
+	// runs "Load playlist tracks into variables", then come alive without
+	// requiring a preset re-emission per playlist.
+	const currentTrackPresetIds: string[] = []
+	for (let i = 1; i <= PLAYLIST_TRACK_SLOTS; i++) {
+		const presetId = `current_playlist_track_${i}`
+		currentTrackPresetIds.push(presetId)
+		presets[presetId as keyof typeof presets] = {
+			type: 'simple',
+			name: `Current playlist: track ${i}`,
+			style: {
+				text: `${i}.\n$(tidal:playlist_track_${i}_title)`,
+				size: 'auto',
+				color: combineRgb(255, 255, 255),
+				bgcolor: combineRgb(64, 0, 96),
+			},
+			steps: [
+				{
+					down: [
+						{
+							actionId: 'open_tidal_uri',
+							options: { uri: `$(tidal:playlist_track_${i}_uri)` },
+						},
+					],
+					up: [],
+				},
+			],
+			feedbacks: [],
+		}
+	}
+
+	// "Search results" — N fixed presets backed by last_search_result_<n>_*
+	// variables, regenerated transparently after every search action.
+	const searchResultPresetIds: string[] = []
+	for (let i = 1; i <= SEARCH_RESULT_SLOTS; i++) {
+		const presetId = `search_result_${i}`
+		searchResultPresetIds.push(presetId)
+		presets[presetId as keyof typeof presets] = {
+			type: 'simple',
+			name: `Search result ${i}`,
+			style: {
+				text: `${i}.\n$(tidal:last_search_result_${i}_title)`,
+				size: 'auto',
+				color: combineRgb(255, 255, 255),
+				bgcolor: combineRgb(96, 64, 0),
+			},
+			steps: [
+				{
+					down: [{ actionId: 'play_search_result', options: { index: i } }],
+					up: [],
+				},
+			],
+			feedbacks: [],
+		}
+	}
+
 	const structure: CompanionPresetSection<ModuleSchema>[] = [
 		{
 			id: 'loaded_track',
@@ -261,7 +352,27 @@ export function UpdatePresets(self: ModuleInstance): void {
 				'playback_repeat_toggle',
 			],
 		},
+		{
+			id: 'library_playlists',
+			name: 'Your playlists',
+			definitions: playlistPresetIds,
+		},
+		{
+			id: 'current_playlist_tracks',
+			name: 'Current playlist tracks',
+			definitions: currentTrackPresetIds,
+		},
+		{
+			id: 'search_results',
+			name: 'Search results',
+			definitions: searchResultPresetIds,
+		},
 	]
 
 	self.setPresetDefinitions(structure, presets)
+}
+
+function truncate(s: string, max: number): string {
+	if (s.length <= max) return s
+	return `${s.slice(0, max - 1)}…`
 }

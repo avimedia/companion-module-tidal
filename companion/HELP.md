@@ -19,12 +19,16 @@ This module connects [Bitfocus Companion](https://bitfocus.io/companion) and [Bi
 
 | Action                                  | Description                                                                                                                                                                   |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Search catalog                          | Search tracks/albums/artists/playlists/videos. Stores the first result in the loaded-track variables and updates `last_search_*`.                                             |
+| Search catalog                          | Search tracks/albums/artists/playlists/videos. Stores the first result in the loaded-track variables, all results in the search-result slots, and updates `last_search_*`.    |
 | Load track by ID                        | Fetch a track by its numeric TIDAL ID.                                                                                                                                        |
 | Load track by ISRC                      | Look up a track by ISRC (useful for cue sheets).                                                                                                                              |
 | Load album by ID                        | Populate album-related variables.                                                                                                                                             |
 | Load playlist by ID                     | Populate playlist-related variables.                                                                                                                                          |
 | Refresh access token                    | Force a token refresh (or fetch a fresh client-credentials token).                                                                                                            |
+| Refresh user library (playlists)        | Re-fetch your owned playlists from TIDAL and rebuild the dropdown + preset section. Requires **Authorization Code** mode.                                                     |
+| Play playlist (from your library)       | Dropdown of your cached playlists. Launches `tidal://playlist/<id>` in the TIDAL desktop app.                                                                                 |
+| Load playlist tracks into variables     | Loads up to 32 tracks of a chosen playlist into `playlist_track_1_*` … `playlist_track_32_*` variables, regenerates the _Current playlist tracks_ preset section.             |
+| Play search result (by index)           | Plays the Nth result of the most recent search (1-10). Two-button workflow: "Search X" + "Play 1st result".                                                                   |
 | Open URI in TIDAL desktop               | Launch any `tidal://...` (or `https://tidal.com/...`) URL through the OS.                                                                                                     |
 | Open track in TIDAL desktop             | Convenience wrapper for `tidal://track/<id>`.                                                                                                                                 |
 | Playback: Play / Pause                  | Sends `Space` to the TIDAL desktop window.                                                                                                                                    |
@@ -73,9 +77,17 @@ If the TIDAL desktop app isn't running, all engines will fail gracefully with a 
 
 ## Variables
 
-`auth_status`, `auth_expires_at`, `current_track_id`, `current_track_title`, `current_track_artists`, `current_track_album`, `current_track_isrc`, `current_track_duration`, `current_track_explicit`, `current_track_uri`, `last_search_count`, `last_search_query`, `last_search_kind`, `last_search_first_id`, `last_search_first_title`, `current_user_id`, `current_user_name`, `current_user_country`.
+**Auth / session:** `auth_status`, `auth_expires_at`, `current_user_id`, `current_user_name`, `current_user_country`.
 
-Reference them in button text as `$(tidal:variable_name)`.
+**Loaded track:** `current_track_id`, `current_track_title`, `current_track_artists`, `current_track_album`, `current_track_isrc`, `current_track_duration` (seconds), `current_track_explicit`, `current_track_uri`.
+
+**Last search:** `last_search_count`, `last_search_query`, `last_search_kind`, `last_search_first_id`, `last_search_first_title`, and per-result slots `last_search_result_1_id` / `_title` / `_artists` / `_uri` … through slot 10.
+
+**Library:** `library_playlist_count`, `library_refreshed_at`.
+
+**Loaded playlist:** `last_loaded_playlist_id`, `last_loaded_playlist_name`, `last_loaded_playlist_count`, and per-track slots `playlist_track_1_id` / `_title` / `_artists` / `_uri` … through slot 32.
+
+Reference any of them in button text as `$(tidal:variable_name)`.
 
 ## Feedbacks
 
@@ -85,7 +97,23 @@ Reference them in button text as `$(tidal:variable_name)`.
 
 ## Presets
 
-The module ships with starter presets under the categories _Loaded track_, _Search_, _Status_, and _Transport_ (Previous, Play/Pause, Next, Volume −, Volume +, Mute, Shuffle, Repeat).
+The module ships with starter presets organised by section:
+
+- **Loaded track** — single-button preset showing the title/artists of the most recently loaded track.
+- **Search** — single-button preset summarising the most recent search.
+- **Status** — single-button preset showing authentication status (tap to refresh the token).
+- **Transport** — Previous, Play/Pause, Next, Volume −, Volume +, Mute, Shuffle, Repeat. Each respects the connection-level engine setting unless overridden per button.
+- **Your playlists** _(Authorization Code mode only)_ — one preset per playlist you own, auto-generated after a library refresh. Drag any onto a button to bind it to "Play playlist <name>".
+- **Current playlist tracks** — 32 numbered presets backed by the `playlist_track_N_*` variables. They render empty until you run _Load playlist tracks into variables_; afterwards the labels and target URIs come alive without any per-preset re-emission.
+- **Search results** — 10 numbered presets backed by the `last_search_result_N_*` variables. Pressing one runs _Play search result (by index)_ for that slot. Re-run _Search catalog_ to repopulate.
+
+### Library-feature workflow
+
+1. Switch the connection's **Authentication mode** to _Authorization Code + PKCE_, fill in Client ID / Secret, save.
+2. Open the Auth URL surfaced in the connection log (or the _Auth URL_ config field) and complete the TIDAL login.
+3. The module auto-runs _Refresh user library_ on first authenticate. You can run it again any time after creating new playlists in TIDAL.
+4. The _Your playlists_ preset section now contains one button per playlist. Drag the ones you want straight onto your grid.
+5. To play a specific track inside a playlist, bind a button to _Load playlist tracks into variables_, pick the playlist + count. Then drag _Current playlist tracks → track N_ presets for the tracks you want.
 
 ## Compatibility
 

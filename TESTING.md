@@ -323,6 +323,40 @@ Quick checks that the engine selector behaves cleanly:
 
 ---
 
+### 4.11 Library features _(v0.5.0+, Authorization Code mode only)_
+
+> All steps in 4.11 require the connection's **Authentication mode** to be set to _Authorization Code + PKCE_ and the OAuth flow completed. In _Client Credentials_ mode, the playlist dropdown shows `— Run "Refresh user library" first (Authorization Code mode) —` and the _Your playlists_ preset section is empty.
+
+**Library refresh + playlist preset section**
+
+1. Add a button bound to **Refresh user library (playlists)** and press it. Log shows `Library refreshed: <N> playlists.`
+2. Open the preset browser → expand **Your playlists**. You should see one preset per playlist you own, each labelled with the playlist name and track count. Drag one onto a button.
+3. Press that button → TIDAL desktop navigates to and (typically) starts playing the playlist.
+4. Confirm variables: `$(tidal:library_playlist_count)` shows N, `$(tidal:library_refreshed_at)` shows the ISO timestamp.
+
+**Playlist dropdown action**
+
+5. Add a button bound to **Play playlist (from your library)** → the dropdown lists all cached playlists. Pick one, save, press → TIDAL desktop opens that playlist.
+
+**Per-track variable loading**
+
+6. Add a button bound to **Load playlist tracks into variables** → pick a playlist, set count (e.g. 16), press.
+7. Variables `playlist_track_1_id` … `playlist_track_16_id` now hold real track IDs. `last_loaded_playlist_name` shows the playlist name.
+8. Open the preset browser → **Current playlist tracks** → presets 1–16 now show their actual track titles. Presets 17–32 remain blank.
+9. Drag preset _track 5_ onto a button and press it → TIDAL plays track 5 of that playlist.
+
+**Search-and-play workflow**
+
+10. Add a button bound to **Search catalog** → query "Bohemian Rhapsody", kind=tracks, limit=10. Press.
+11. Variables `last_search_result_1_title` … `last_search_result_10_title` are populated. Open preset browser → **Search results** → presets 1–10 show the titles.
+12. Drag preset _result 1_ onto a button → press it → TIDAL plays the top hit.
+13. Alternatively, bind a button to **Play search result (by index)** with index=1.
+
+**Soft-degrade smoke test**
+
+14. Switch the connection to **Client Credentials** mode (no user login required). Reload the connection.
+15. Verify: _Your playlists_ preset section is empty, playlist dropdown shows the "Run Refresh user library first" placeholder, catalog actions (Search, Load track) still work.
+
 ## 5. Smoke tests — feedbacks
 
 Apply each as a button feedback and confirm the colour switches:
@@ -356,7 +390,20 @@ current_track_explicit current_track_uri
 last_search_count      last_search_query         last_search_kind
 last_search_first_id   last_search_first_title
 
+# Last search slot variables (1-10), v0.5.0+
+last_search_result_<n>_id      last_search_result_<n>_title
+last_search_result_<n>_artists last_search_result_<n>_uri
+
 current_user_id        current_user_name         current_user_country
+
+# Library + loaded-playlist variables (v0.5.0+, Authorization Code mode)
+library_playlist_count       library_refreshed_at
+last_loaded_playlist_id      last_loaded_playlist_name
+last_loaded_playlist_count
+
+# Loaded-playlist track slots (1-32), v0.5.0+
+playlist_track_<n>_id      playlist_track_<n>_title
+playlist_track_<n>_artists playlist_track_<n>_uri
 ```
 
 ---

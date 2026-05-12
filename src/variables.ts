@@ -1,5 +1,20 @@
 import type ModuleInstance from './main.js'
+import { PLAYLIST_TRACK_SLOTS, SEARCH_RESULT_SLOTS } from './main.js'
 
+type SlotVariableKey =
+	| `playlist_track_${number}_id`
+	| `playlist_track_${number}_title`
+	| `playlist_track_${number}_artists`
+	| `playlist_track_${number}_uri`
+	| `last_search_result_${number}_id`
+	| `last_search_result_${number}_title`
+	| `last_search_result_${number}_artists`
+	| `last_search_result_${number}_uri`
+
+// The slot-indexed variables (playlist_track_N_*, last_search_result_N_*) are
+// programmatically generated below — keeping the schema shape open via this
+// index signature keeps each slot strictly-typed while avoiding a 256-line
+// hand-written enumeration.
 export type VariablesSchema = {
 	auth_status: string | undefined
 	auth_expires_at: string | undefined
@@ -22,10 +37,17 @@ export type VariablesSchema = {
 	current_user_id: string | undefined
 	current_user_name: string | undefined
 	current_user_country: string | undefined
-}
+
+	library_playlist_count: number | undefined
+	library_refreshed_at: string | undefined
+
+	last_loaded_playlist_id: string | undefined
+	last_loaded_playlist_name: string | undefined
+	last_loaded_playlist_count: number | undefined
+} & { [K in SlotVariableKey]: string | undefined }
 
 export function UpdateVariableDefinitions(self: ModuleInstance): void {
-	self.setVariableDefinitions({
+	const defs: Record<string, { name: string }> = {
 		auth_status: { name: 'Authentication status' },
 		auth_expires_at: { name: 'Access token expiry (ISO8601)' },
 
@@ -47,5 +69,28 @@ export function UpdateVariableDefinitions(self: ModuleInstance): void {
 		current_user_id: { name: 'Signed-in user: ID' },
 		current_user_name: { name: 'Signed-in user: display name' },
 		current_user_country: { name: 'Signed-in user: country' },
-	})
+
+		library_playlist_count: { name: 'Library: cached playlist count' },
+		library_refreshed_at: { name: 'Library: last refresh (ISO8601)' },
+
+		last_loaded_playlist_id: { name: 'Loaded playlist: ID' },
+		last_loaded_playlist_name: { name: 'Loaded playlist: name' },
+		last_loaded_playlist_count: { name: 'Loaded playlist: track count' },
+	}
+
+	for (let i = 1; i <= PLAYLIST_TRACK_SLOTS; i++) {
+		defs[`playlist_track_${i}_id`] = { name: `Loaded playlist: track ${i} ID` }
+		defs[`playlist_track_${i}_title`] = { name: `Loaded playlist: track ${i} title` }
+		defs[`playlist_track_${i}_artists`] = { name: `Loaded playlist: track ${i} artists` }
+		defs[`playlist_track_${i}_uri`] = { name: `Loaded playlist: track ${i} TIDAL URI` }
+	}
+
+	for (let i = 1; i <= SEARCH_RESULT_SLOTS; i++) {
+		defs[`last_search_result_${i}_id`] = { name: `Last search: result ${i} ID` }
+		defs[`last_search_result_${i}_title`] = { name: `Last search: result ${i} title` }
+		defs[`last_search_result_${i}_artists`] = { name: `Last search: result ${i} artists` }
+		defs[`last_search_result_${i}_uri`] = { name: `Last search: result ${i} TIDAL URI` }
+	}
+
+	self.setVariableDefinitions(defs as never)
 }

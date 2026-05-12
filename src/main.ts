@@ -5,6 +5,8 @@ import {
 	type CompanionHTTPResponse,
 	type SomeCompanionConfigField,
 } from '@companion-module/base'
+import { execFile } from 'node:child_process'
+import { platform } from 'node:process'
 
 import { GetConfigFields, GetDefaultConfig, type ModuleConfig } from './config.js'
 import { UpdateActions, type ActionsSchema } from './actions.js'
@@ -34,12 +36,44 @@ export { UpgradeScripts }
 
 const TOKEN_REFRESH_BUFFER_MS = 60_000
 
+// How many "current playlist" track slots and "search result" slots we publish
+// as variables / presets. 32 covers a Stream Deck XL's full key count.
+export const PLAYLIST_TRACK_SLOTS = 32
+export const SEARCH_RESULT_SLOTS = 10
+
+export type LibraryPlaylistEntry = {
+	id: string
+	name: string
+	numberOfItems: number
+	uri: string
+}
+
+export type LibraryTrackEntry = {
+	id: string
+	title: string
+	artists: string
+	uri: string
+}
+
 export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	config!: ModuleConfig
 	api!: TidalApi
 
 	lastSearchCount = 0
 	currentTrackExplicit = false
+
+	// Library caches (Tier 1/2/3). Populated by `refreshLibrary()` when the
+	// connection is in Authorization Code mode and authenticated. Surfaced to
+	// the UI via dynamically-recomputed action choices and preset sections.
+	playlistCache: LibraryPlaylistEntry[] = []
+	currentPlaylistTracks: LibraryTrackEntry[] = []
+	currentPlaylistId: string = ''
+	currentPlaylistName: string = ''
+	lastSearchEntries: LibraryTrackEntry[] = []
+	libraryRefreshedAt: number = 0
+
+	private libraryRefreshInFlight: Promise<void> | null = null
+	private playlistTracksCache: Map<string, LibraryTrackEntry[]> = new Map()
 
 	private refreshTimer: NodeJS.Timeout | null = null
 	private refreshInFlight: Promise<string | null> | null = null
@@ -147,7 +181,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	private resetTransientVariables(): void {
-		this.setVariableValues({
+		const values: Record<string, string | number | undefined> = {
 			auth_status: this.config.authStatus || 'Not authenticated',
 			auth_expires_at: this.config.tokenExpiresAt ? new Date(this.config.tokenExpiresAt).toISOString() : '',
 			current_track_id: '',
@@ -166,7 +200,25 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			current_user_id: '',
 			current_user_name: '',
 			current_user_country: '',
-		})
+			library_playlist_count: 0,
+			library_refreshed_at: '',
+			last_loaded_playlist_id: '',
+			last_loaded_playlist_name: '',
+			last_loaded_playlist_count: 0,
+		}
+		for (let i = 1; i <= PLAYLIST_TRACK_SLOTS; i++) {
+			values[`playlist_track_${i}_id`] = ''
+			values[`playlist_track_${i}_title`] = ''
+			values[`playlist_track_${i}_artists`] = ''
+			values[`playlist_track_${i}_uri`] = ''
+		}
+		for (let i = 1; i <= SEARCH_RESULT_SLOTS; i++) {
+			values[`last_search_result_${i}_id`] = ''
+			values[`last_search_result_${i}_title`] = ''
+			values[`last_search_result_${i}_artists`] = ''
+			values[`last_search_result_${i}_uri`] = ''
+		}
+		this.setVariableValues(values as never)
 	}
 
 	private setStatusFromAuth(): void {
@@ -338,6 +390,22 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.updateStatus(InstanceStatus.Ok)
 		this.checkFeedbacks('authenticated')
 		this.scheduleProactiveRefresh()
+
+		// Soft-degrade: only the user-scoped Authorization Code flow can surface
+		// the user's owned playlists. In Client Credentials mode the catalog is
+		// available but no per-user library exists — skip the refresh and leave
+		// the dynamic dropdowns empty with a clear "no library" sentinel.
+		if (this.config.authMode === 'authorization_code') {
+			// Surface the user ID immediately from the JWT so it's available
+			// for variable bindings even before the (legacy) /users/me lookup.
+			// v2 doesn't ship that endpoint; we keep loadCurrentUser() as a
+			// best-effort enrichment for display name / country.
+			const userId = this.getAuthenticatedUserId()
+			if (userId) this.setVariableValues({ current_user_id: userId })
+			void this.refreshLibrary().catch((err) => {
+				this.log('debug', `Initial library refresh failed: ${(err as Error).message}`)
+			})
+		}
 	}
 
 	private scheduleProactiveRefresh(): void {
@@ -426,6 +494,20 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			})
 			this.checkFeedbacks('has_search_results')
 
+			// Materialise the full result set for the "Search results" preset
+			// section + play_search_result action. Bounded by SEARCH_RESULT_SLOTS
+			// so we never publish more variables than the schema declares.
+			this.lastSearchEntries = items.slice(0, SEARCH_RESULT_SLOTS).map((item) => {
+				const uri = uriForResource(item, kind)
+				return {
+					id: item.id,
+					title: extractTitle(item),
+					artists: extractArtistNames(item, response),
+					uri,
+				}
+			})
+			this.publishSearchResultVariables()
+
 			if (first && kind === 'tracks') {
 				this.applyTrackResource(first, response)
 			}
@@ -449,7 +531,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		if (!isrc) return
 		try {
 			const response = await this.api.getTrackByIsrc(isrc, this.config.countryCode)
-			const primary = response.data?.[0]
+			const primary = collectResources(response)[0]
 			if (primary) this.applyTrackResource(primary, response)
 			else this.log('info', `No track found for ISRC ${isrc}`)
 		} catch (err) {
@@ -523,6 +605,179 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			current_track_uri: `tidal://track/${resource.id}`,
 		})
 		this.checkFeedbacks('track_explicit')
+	}
+
+	// Decode the TIDAL access token's `sub` claim to obtain the authenticated
+	// user's TIDAL ID. The v2 public API does not expose a `/users/me` shortcut
+	// (despite the v1-era convention), so callers that need to filter by owner
+	// rely on this lookup. JWT structure is base64url-decoded without
+	// signature verification — we trust the token because we just received it
+	// from our own OAuth exchange.
+	getAuthenticatedUserId(): string {
+		const token = this.config.accessToken
+		if (!token || token.split('.').length !== 3) return ''
+		try {
+			const payload = token.split('.')[1]
+			const padded = payload + '==='.slice(0, (4 - (payload.length % 4)) % 4)
+			const json = Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+			const parsed = JSON.parse(json) as Record<string, unknown>
+			const sub = parsed.sub ?? parsed.uid ?? parsed.userId ?? parsed.user_id
+			if (typeof sub === 'string' && sub) return sub
+			if (typeof sub === 'number') return String(sub)
+		} catch {
+			/* fall through */
+		}
+		return ''
+	}
+
+	// Fetch the user's owned playlists and replace the cache. Idempotent;
+	// concurrent invocations share the same in-flight promise so the action
+	// definitions / preset section aren't churned multiple times in parallel.
+	async refreshLibrary(): Promise<void> {
+		if (this.libraryRefreshInFlight) return this.libraryRefreshInFlight
+		this.libraryRefreshInFlight = this.doRefreshLibrary().finally(() => {
+			this.libraryRefreshInFlight = null
+		})
+		return this.libraryRefreshInFlight
+	}
+
+	private async doRefreshLibrary(): Promise<void> {
+		if (this.config.authMode !== 'authorization_code') {
+			this.log(
+				'info',
+				'refresh_library: Authorization Code mode is required for user-library features. Switch authMode to "authorization_code" and complete the Auth URL flow to populate your playlists.',
+			)
+			this.playlistCache = []
+			this.playlistTracksCache.clear()
+			this.publishLibraryVariables()
+			this.updateActions()
+			this.updatePresets()
+			return
+		}
+		const userId = this.getAuthenticatedUserId()
+		if (!userId) {
+			this.log(
+				'warn',
+				'refresh_library: could not determine TIDAL user ID from the current access token; cannot list owned playlists.',
+			)
+			return
+		}
+		try {
+			const playlists = await this.api.listOwnedPlaylists(userId, this.config.countryCode)
+			this.playlistCache = playlists
+				.map((p) => {
+					const attrs = p.attributes ?? {}
+					const name = stringAttr(attrs.name ?? attrs.title)
+					const num = Number(attrs.numberOfItems ?? attrs.itemCount ?? 0)
+					return {
+						id: p.id,
+						name: name || `Playlist ${p.id}`,
+						numberOfItems: Number.isFinite(num) ? num : 0,
+						uri: `tidal://playlist/${p.id}`,
+					}
+				})
+				.sort((a, b) => a.name.localeCompare(b.name))
+			this.playlistTracksCache.clear()
+			this.libraryRefreshedAt = Date.now()
+			this.publishLibraryVariables()
+			this.log('info', `Library refreshed: ${this.playlistCache.length} playlists.`)
+			// Re-emit action definitions and preset structure so the new
+			// dropdown choices and per-playlist presets show up in the UI.
+			this.updateActions()
+			this.updatePresets()
+		} catch (err) {
+			this.log('error', `Library refresh failed: ${(err as Error).message}`)
+		}
+	}
+
+	// Load a playlist's tracks into the "Current playlist" variable slots so
+	// the matching preset section comes alive. Caches per-playlist results so
+	// repeated loads of the same playlist don't re-hit the API.
+	async loadPlaylistIntoVariables(playlistId: string, limit: number = PLAYLIST_TRACK_SLOTS): Promise<void> {
+		if (!playlistId) return
+		const capped = Math.max(1, Math.min(PLAYLIST_TRACK_SLOTS, Math.trunc(limit)))
+		try {
+			// Cache invariant: entries[] is always fetched at the full
+			// PLAYLIST_TRACK_SLOTS bound so re-loading the same playlist with a
+			// larger `count` reuses the cache instead of returning a truncated
+			// stale list. The slicing happens at publish time below.
+			let entries = this.playlistTracksCache.get(playlistId)
+			if (!entries) {
+				const items = await this.api.listPlaylistItems(playlistId, this.config.countryCode, PLAYLIST_TRACK_SLOTS)
+				entries = items.map((item) => {
+					const attrs = item.attributes ?? {}
+					return {
+						id: item.id,
+						title: stringAttr(attrs.title ?? attrs.name),
+						artists: '',
+						uri: `tidal://${item.type === 'videos' ? 'video' : 'track'}/${item.id}`,
+					}
+				})
+				this.playlistTracksCache.set(playlistId, entries)
+			}
+			this.currentPlaylistTracks = entries.slice(0, capped)
+			this.currentPlaylistId = playlistId
+			const matched = this.playlistCache.find((p) => p.id === playlistId)
+			this.currentPlaylistName = matched?.name ?? playlistId
+			this.publishCurrentPlaylistVariables()
+			// Preset section "TIDAL — Current playlist tracks" is regenerated
+			// so its button labels reflect the freshly-loaded titles.
+			this.updatePresets()
+		} catch (err) {
+			this.log('error', `Load playlist into variables failed: ${(err as Error).message}`)
+		}
+	}
+
+	async playSearchResult(index: number): Promise<void> {
+		const idx = Math.max(1, Math.min(SEARCH_RESULT_SLOTS, Math.trunc(index)))
+		const entry = this.lastSearchEntries[idx - 1]
+		if (!entry || !entry.uri) {
+			this.log('warn', `play_search_result: no cached result at index ${idx}. Run a search first.`)
+			return
+		}
+		try {
+			await launchUri(entry.uri)
+			this.log('info', `Opened search result ${idx}: ${entry.title || entry.uri}`)
+		} catch (err) {
+			this.log('error', `play_search_result ${idx} failed: ${(err as Error).message}`)
+		}
+	}
+
+	private publishLibraryVariables(): void {
+		this.setVariableValues({
+			library_playlist_count: this.playlistCache.length,
+			library_refreshed_at: this.libraryRefreshedAt ? new Date(this.libraryRefreshedAt).toISOString() : '',
+		})
+	}
+
+	private publishCurrentPlaylistVariables(): void {
+		const values: Record<string, string | number | undefined> = {
+			last_loaded_playlist_id: this.currentPlaylistId,
+			last_loaded_playlist_name: this.currentPlaylistName,
+			last_loaded_playlist_count: this.currentPlaylistTracks.length,
+		}
+		for (let i = 0; i < PLAYLIST_TRACK_SLOTS; i++) {
+			const entry = this.currentPlaylistTracks[i]
+			const n = i + 1
+			values[`playlist_track_${n}_id`] = entry?.id ?? ''
+			values[`playlist_track_${n}_title`] = entry?.title ?? ''
+			values[`playlist_track_${n}_artists`] = entry?.artists ?? ''
+			values[`playlist_track_${n}_uri`] = entry?.uri ?? ''
+		}
+		this.setVariableValues(values as never)
+	}
+
+	private publishSearchResultVariables(): void {
+		const values: Record<string, string | number | undefined> = {}
+		for (let i = 0; i < SEARCH_RESULT_SLOTS; i++) {
+			const entry = this.lastSearchEntries[i]
+			const n = i + 1
+			values[`last_search_result_${n}_id`] = entry?.id ?? ''
+			values[`last_search_result_${n}_title`] = entry?.title ?? ''
+			values[`last_search_result_${n}_artists`] = entry?.artists ?? ''
+			values[`last_search_result_${n}_uri`] = entry?.uri ?? ''
+		}
+		this.setVariableValues(values as never)
 	}
 }
 
@@ -606,4 +861,40 @@ function extractAlbumTitle(track: TidalResource, full: TidalSearchResponse): str
 	if (album) return stringAttr((album.attributes ?? {}).title)
 	const attrs = track.attributes ?? {}
 	return stringAttr(attrs.album)
+}
+
+function uriForResource(item: TidalResource, kind: SearchKind): string {
+	switch (kind) {
+		case 'tracks':
+			return `tidal://track/${item.id}`
+		case 'albums':
+			return `tidal://album/${item.id}`
+		case 'playlists':
+			return `tidal://playlist/${item.id}`
+		case 'artists':
+			return `tidal://artist/${item.id}`
+		case 'videos':
+			return `tidal://video/${item.id}`
+		default:
+			return ''
+	}
+}
+
+// Internal "launch a URI through the OS" helper used by the new library
+// actions. Mirrors the shell-injection-safe execFile pattern from actions.ts —
+// no shell interpretation, hard-coded argv.
+export async function launchUri(uri: string): Promise<void> {
+	const [cmd, args]: [string, string[]] =
+		platform === 'darwin'
+			? ['open', [uri]]
+			: platform === 'win32'
+				? ['rundll32.exe', ['url.dll,FileProtocolHandler', uri]]
+				: ['xdg-open', [uri]]
+
+	return new Promise((resolve, reject) => {
+		execFile(cmd, args, (error) => {
+			if (error) reject(error instanceof Error ? error : new Error(`${cmd} failed`))
+			else resolve()
+		})
+	})
 }
