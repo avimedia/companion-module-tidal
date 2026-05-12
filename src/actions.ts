@@ -6,11 +6,14 @@ import type { SearchKind } from './tidal-api.js'
 import {
 	type AbstractModifier,
 	type PlaybackCommand,
+	type PlaybackEngine,
 	type SemanticCommand,
 	SUPPORTED_SHORTCUT_KEYS,
 	isSupportedShortcutKey,
 	sendPlaybackCommand,
 } from './playback.js'
+
+type PlaybackActionOptions = { engine: string }
 
 export type ActionsSchema = {
 	search: { options: { query: string; kind: string; limit: number } }
@@ -21,15 +24,39 @@ export type ActionsSchema = {
 	refresh_token: { options: Record<string, never> }
 	open_tidal_uri: { options: { uri: string } }
 	open_track_in_desktop: { options: { id: string } }
-	playback_play_pause: { options: Record<string, never> }
-	playback_next: { options: Record<string, never> }
-	playback_previous: { options: Record<string, never> }
-	playback_seek_forward: { options: Record<string, never> }
-	playback_seek_backward: { options: Record<string, never> }
-	playback_volume_up: { options: Record<string, never> }
-	playback_volume_down: { options: Record<string, never> }
-	playback_mute_toggle: { options: Record<string, never> }
-	playback_send_shortcut: { options: { key: string; modifiers: string[] } }
+	playback_play_pause: { options: PlaybackActionOptions }
+	playback_next: { options: PlaybackActionOptions }
+	playback_previous: { options: PlaybackActionOptions }
+	playback_seek_forward: { options: PlaybackActionOptions }
+	playback_seek_backward: { options: PlaybackActionOptions }
+	playback_volume_up: { options: PlaybackActionOptions }
+	playback_volume_down: { options: PlaybackActionOptions }
+	playback_mute_toggle: { options: PlaybackActionOptions }
+	playback_shuffle_toggle: { options: PlaybackActionOptions }
+	playback_repeat_toggle: { options: PlaybackActionOptions }
+	playback_send_shortcut: { options: { key: string; modifiers: string[]; engine: string } }
+}
+
+const PLAYBACK_ENGINE_DEFAULT_CHOICE = '__use_connection_default__'
+
+const PLAYBACK_ENGINE_CHOICES = [
+	{
+		id: PLAYBACK_ENGINE_DEFAULT_CHOICE,
+		label: 'Use connection config default',
+	},
+	{ id: 'disabled', label: 'Disabled' },
+	{ id: 'focus_keystroke', label: 'Focus + keystroke' },
+	{ id: 'media_keys', label: 'OS media keys' },
+	{ id: 'playerctl', label: 'playerctl (Linux MPRIS)' },
+]
+
+function resolveEngine(self: ModuleInstance, raw: unknown): PlaybackEngine {
+	if (typeof raw === 'string' && raw !== PLAYBACK_ENGINE_DEFAULT_CHOICE && raw !== '') {
+		if (raw === 'disabled' || raw === 'focus_keystroke' || raw === 'media_keys' || raw === 'playerctl') {
+			return raw
+		}
+	}
+	return self.config.playbackEngine
 }
 
 const SEARCH_KIND_CHOICES = [
@@ -222,6 +249,8 @@ export function UpdateActions(self: ModuleInstance): void {
 		playback_volume_up: makePlaybackAction(self, 'Playback: Volume up', 'volume_up'),
 		playback_volume_down: makePlaybackAction(self, 'Playback: Volume down', 'volume_down'),
 		playback_mute_toggle: makePlaybackAction(self, 'Playback: Toggle mute', 'mute_toggle'),
+		playback_shuffle_toggle: makePlaybackAction(self, 'Playback: Toggle shuffle', 'shuffle_toggle'),
+		playback_repeat_toggle: makePlaybackAction(self, 'Playback: Cycle repeat mode', 'repeat_toggle'),
 		playback_send_shortcut: {
 			name: 'Playback: Send custom keyboard shortcut to TIDAL',
 			description:
@@ -245,6 +274,13 @@ export function UpdateActions(self: ModuleInstance): void {
 						{ id: 'alt', label: '⌥ Option / Alt' },
 					],
 				},
+				{
+					type: 'dropdown',
+					id: 'engine',
+					label: 'Engine (overrides connection config)',
+					default: PLAYBACK_ENGINE_DEFAULT_CHOICE,
+					choices: PLAYBACK_ENGINE_CHOICES,
+				},
 			],
 			callback: async (event) => {
 				const rawKey = String(event.options.key ?? '').trim()
@@ -256,8 +292,9 @@ export function UpdateActions(self: ModuleInstance): void {
 				const modifiers = rawMods.filter(
 					(m): m is AbstractModifier => m === 'cmdOrCtrl' || m === 'shift' || m === 'alt',
 				)
+				const engine = resolveEngine(self, event.options.engine)
 				const command: PlaybackCommand = { type: 'custom_shortcut', key: rawKey, modifiers }
-				await dispatchPlayback(self, `playback_send_shortcut (${rawKey}, [${modifiers.join(', ')}])`, command)
+				await dispatchPlayback(self, `playback_send_shortcut (${rawKey}, [${modifiers.join(', ')}])`, command, engine)
 			},
 		},
 	}
@@ -273,18 +310,32 @@ function makePlaybackAction(
 	return {
 		name,
 		description:
-			'Controls the locally installed TIDAL desktop app. The engine used (focus+keystroke / media keys / playerctl / disabled) is picked in the connection config.',
-		options: [],
-		callback: async () => {
-			await dispatchPlayback(self, name, { type: semantic })
+			'Controls the locally installed TIDAL desktop app. The engine used (focus+keystroke / media keys / playerctl / disabled) defaults to the connection config, but can be overridden per button.',
+		options: [
+			{
+				type: 'dropdown',
+				id: 'engine',
+				label: 'Engine (overrides connection config)',
+				default: PLAYBACK_ENGINE_DEFAULT_CHOICE,
+				choices: PLAYBACK_ENGINE_CHOICES,
+			},
+		],
+		callback: async (event) => {
+			const engine = resolveEngine(self, event.options.engine)
+			await dispatchPlayback(self, name, { type: semantic }, engine)
 		},
 	}
 }
 
-async function dispatchPlayback(self: ModuleInstance, name: string, command: PlaybackCommand): Promise<void> {
+async function dispatchPlayback(
+	self: ModuleInstance,
+	name: string,
+	command: PlaybackCommand,
+	engine: PlaybackEngine,
+): Promise<void> {
 	try {
 		const result = await sendPlaybackCommand(command, {
-			engine: self.config.playbackEngine,
+			engine,
 			restoreFocus: self.config.playbackRestoreFocus,
 		})
 		if (!result.ok) {

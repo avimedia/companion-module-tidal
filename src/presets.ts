@@ -3,6 +3,8 @@ import type ModuleInstance from './main.js'
 import type { ModuleSchema } from './main.js'
 import type { CompanionPresetDefinitions, CompanionPresetSection } from '@companion-module/base'
 
+const PLAYBACK_DEFAULT_ENGINE_OPTION = { engine: '__use_connection_default__' }
+
 export function UpdatePresets(self: ModuleInstance): void {
 	const presets: CompanionPresetDefinitions<ModuleSchema> = {
 		now_playing: {
@@ -99,7 +101,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			},
 			steps: [
 				{
-					down: [{ actionId: 'playback_play_pause', options: {} }],
+					down: [{ actionId: 'playback_play_pause', options: PLAYBACK_DEFAULT_ENGINE_OPTION }],
 					up: [],
 				},
 			],
@@ -116,7 +118,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			},
 			steps: [
 				{
-					down: [{ actionId: 'playback_next', options: {} }],
+					down: [{ actionId: 'playback_next', options: PLAYBACK_DEFAULT_ENGINE_OPTION }],
 					up: [],
 				},
 			],
@@ -133,7 +135,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			},
 			steps: [
 				{
-					down: [{ actionId: 'playback_previous', options: {} }],
+					down: [{ actionId: 'playback_previous', options: PLAYBACK_DEFAULT_ENGINE_OPTION }],
 					up: [],
 				},
 			],
@@ -150,7 +152,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			},
 			steps: [
 				{
-					down: [{ actionId: 'playback_volume_up', options: {} }],
+					down: [{ actionId: 'playback_volume_up', options: PLAYBACK_DEFAULT_ENGINE_OPTION }],
 					up: [],
 				},
 			],
@@ -167,7 +169,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			},
 			steps: [
 				{
-					down: [{ actionId: 'playback_volume_down', options: {} }],
+					down: [{ actionId: 'playback_volume_down', options: PLAYBACK_DEFAULT_ENGINE_OPTION }],
 					up: [],
 				},
 			],
@@ -184,7 +186,41 @@ export function UpdatePresets(self: ModuleInstance): void {
 			},
 			steps: [
 				{
-					down: [{ actionId: 'playback_mute_toggle', options: {} }],
+					down: [{ actionId: 'playback_mute_toggle', options: PLAYBACK_DEFAULT_ENGINE_OPTION }],
+					up: [],
+				},
+			],
+			feedbacks: [],
+		},
+		playback_shuffle_toggle: {
+			type: 'simple',
+			name: 'Shuffle',
+			style: {
+				text: '🔀\nShuffle',
+				size: 'auto',
+				color: combineRgb(255, 255, 255),
+				bgcolor: combineRgb(64, 64, 64),
+			},
+			steps: [
+				{
+					down: [{ actionId: 'playback_shuffle_toggle', options: PLAYBACK_DEFAULT_ENGINE_OPTION }],
+					up: [],
+				},
+			],
+			feedbacks: [],
+		},
+		playback_repeat_toggle: {
+			type: 'simple',
+			name: 'Repeat',
+			style: {
+				text: '🔁\nRepeat',
+				size: 'auto',
+				color: combineRgb(255, 255, 255),
+				bgcolor: combineRgb(64, 64, 64),
+			},
+			steps: [
+				{
+					down: [{ actionId: 'playback_repeat_toggle', options: PLAYBACK_DEFAULT_ENGINE_OPTION }],
 					up: [],
 				},
 			],
@@ -218,6 +254,8 @@ export function UpdatePresets(self: ModuleInstance): void {
 				'playback_volume_down',
 				'playback_volume_up',
 				'playback_mute_toggle',
+				'playback_shuffle_toggle',
+				'playback_repeat_toggle',
 			],
 		},
 	]

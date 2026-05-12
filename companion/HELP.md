@@ -17,24 +17,28 @@ This module connects [Bitfocus Companion](https://bitfocus.io/companion) and [Bi
 
 ## Actions
 
-| Action                                  | Description                                                                                                                       |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Search catalog                          | Search tracks/albums/artists/playlists/videos. Stores the first result in the loaded-track variables and updates `last_search_*`. |
-| Load track by ID                        | Fetch a track by its numeric TIDAL ID.                                                                                            |
-| Load track by ISRC                      | Look up a track by ISRC (useful for cue sheets).                                                                                  |
-| Load album by ID                        | Populate album-related variables.                                                                                                 |
-| Load playlist by ID                     | Populate playlist-related variables.                                                                                              |
-| Refresh access token                    | Force a token refresh (or fetch a fresh client-credentials token).                                                                |
-| Open URI in TIDAL desktop               | Launch any `tidal://...` (or `https://tidal.com/...`) URL through the OS.                                                         |
-| Open track in TIDAL desktop             | Convenience wrapper for `tidal://track/<id>`.                                                                                     |
-| Playback: Play / Pause                  | Sends `Space` to the TIDAL desktop window.                                                                                        |
-| Playback: Next track                    | Sends `⌘/Ctrl + →` to the TIDAL desktop window.                                                                                   |
-| Playback: Previous track                | Sends `⌘/Ctrl + ←` to the TIDAL desktop window.                                                                                   |
-| Playback: Seek forward                  | Sends `Shift + →` to the TIDAL desktop window.                                                                                    |
-| Playback: Seek backward                 | Sends `Shift + ←` to the TIDAL desktop window.                                                                                    |
-| Playback: Volume up / down              | Sends `⌘/Ctrl + ↑ / ↓` to the TIDAL desktop window.                                                                               |
-| Playback: Toggle mute                   | Sends `⌘/Ctrl + M` to the TIDAL desktop window.                                                                                   |
-| Playback: Send custom keyboard shortcut | Generic escape hatch — pick any supported key and any combination of `⌘/Ctrl`, `Shift`, `Alt`.                                    |
+| Action                                  | Description                                                                                                                                                                   |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Search catalog                          | Search tracks/albums/artists/playlists/videos. Stores the first result in the loaded-track variables and updates `last_search_*`.                                             |
+| Load track by ID                        | Fetch a track by its numeric TIDAL ID.                                                                                                                                        |
+| Load track by ISRC                      | Look up a track by ISRC (useful for cue sheets).                                                                                                                              |
+| Load album by ID                        | Populate album-related variables.                                                                                                                                             |
+| Load playlist by ID                     | Populate playlist-related variables.                                                                                                                                          |
+| Refresh access token                    | Force a token refresh (or fetch a fresh client-credentials token).                                                                                                            |
+| Open URI in TIDAL desktop               | Launch any `tidal://...` (or `https://tidal.com/...`) URL through the OS.                                                                                                     |
+| Open track in TIDAL desktop             | Convenience wrapper for `tidal://track/<id>`.                                                                                                                                 |
+| Playback: Play / Pause                  | Sends `Space` to the TIDAL desktop window.                                                                                                                                    |
+| Playback: Next track                    | Sends `Ctrl + →` to the TIDAL desktop window.                                                                                                                                 |
+| Playback: Previous track                | Sends `Ctrl + ←` to the TIDAL desktop window.                                                                                                                                 |
+| Playback: Seek forward                  | Sends `Ctrl + Shift + →` to the TIDAL desktop window (TIDAL's documented ±10s shortcut).                                                                                      |
+| Playback: Seek backward                 | Sends `Ctrl + Shift + ←` to the TIDAL desktop window.                                                                                                                         |
+| Playback: Volume up / down              | Sends `Ctrl + ↑ / ↓` to the TIDAL desktop window.                                                                                                                             |
+| Playback: Toggle mute                   | TIDAL has no native mute shortcut. With `Focus + keystroke` this action logs a warning. Use the `OS media keys` engine on Windows for OS-level mute, or `playerctl` on Linux. |
+| Playback: Toggle shuffle                | Sends `Ctrl + S` to the TIDAL desktop window.                                                                                                                                 |
+| Playback: Cycle repeat mode             | Sends `Ctrl + R` to the TIDAL desktop window (cycles Off → All → One).                                                                                                        |
+| Playback: Send custom keyboard shortcut | Generic escape hatch — pick any supported key and any combination of `⌘/Ctrl`, `Shift`, `Alt`.                                                                                |
+
+> **Per-button engine override:** every `Playback:` action exposes an _Engine_ dropdown that defaults to **Use connection config default**. Override it per button if, for example, you want a single Play/Pause to use the no-focus-stealing `OS media keys` engine while the rest of your transport stays on `Focus + keystroke`.
 
 ### Playback actions — how they work
 
@@ -55,16 +59,19 @@ There's a separate checkbox — **Restore previously focused app after each pres
   - macOS: first press will prompt for _Accessibility_ permission for the host (Companion / Buttons). Approve under _System Settings → Privacy & Security → Accessibility_.
   - Windows: `powershell.exe` must be on PATH (it is by default on Windows 10/11).
   - Linux X11: `xdotool` must be installed (`apt install xdotool`).
-  - Linux Wayland: **not supported**. Switch to `playerctl` or `OS media keys`.
+  - Linux Wayland: best-effort — install either `ydotool` _with the `ydotoold` daemon running and your user in the `input` group_ (recommended, most universal), or `wtype` (only injects to the currently focused window, so the user must focus TIDAL manually first). The Wayland path cannot reliably activate the TIDAL window from outside, so `Restore previously focused app` is silently ignored.
 - **OS media keys**
-  - macOS: install [`nowplaying-cli`](https://github.com/kirtan-shah/nowplaying-cli) with `brew install nowplaying-cli`. Only Play/Pause, Next, Previous are supported via this engine on macOS — Volume/Seek/Mute log "not supported" and you fall back to `Focus + keystroke`.
+  - macOS: **no install required by default** — the module calls Apple's private `MRMediaRemoteSendCommand` directly via a JXA / `dlopen` trick (`/System/Library/PrivateFrameworks/MediaRemote.framework`). If that path fails (e.g. Apple changes the symbol in a future OS), the module transparently falls back to [`nowplaying-cli`](https://github.com/kirtan-shah/nowplaying-cli) if installed (`brew install nowplaying-cli`). Supported via this engine on macOS: Play/Pause, Next, Previous, Shuffle, Repeat. Volume/Seek/Mute log "not supported" and you should fall back to `Focus + keystroke`.
   - Windows: no installs needed — uses PowerShell P/Invoke. First press has ~1 s `Add-Type` compile latency, subsequent presses are fast.
   - Linux: transparently redirects to `playerctl` (Linux's equivalent of "global media keys" is the MPRIS bus).
 - **playerctl**
   - Linux only. Install with `apt install playerctl` / `dnf install playerctl`.
   - Looks for an MPRIS-exposing TIDAL client (`tidal-hifi`, `tidal`, or `TIDAL`). If none is running you'll see `playerctl could not find an MPRIS-exposing TIDAL client` in the log.
+  - `Repeat: Cycle repeat mode` is **not supported** via `playerctl` (the CLI has no Toggle verb for `loop`). Use `Focus + keystroke` for that one.
 
 If the TIDAL desktop app isn't running, all engines will fail gracefully with a clear message in the connection log.
+
+## Variables
 
 `auth_status`, `auth_expires_at`, `current_track_id`, `current_track_title`, `current_track_artists`, `current_track_album`, `current_track_isrc`, `current_track_duration`, `current_track_explicit`, `current_track_uri`, `last_search_count`, `last_search_query`, `last_search_kind`, `last_search_first_id`, `last_search_first_title`, `current_user_id`, `current_user_name`, `current_user_country`.
 
@@ -78,7 +85,7 @@ Reference them in button text as `$(tidal:variable_name)`.
 
 ## Presets
 
-The module ships with starter presets under the categories _Loaded track_, _Search_, _Status_, and _Transport_ (Play/Pause, Next, Previous, Volume ±, Mute).
+The module ships with starter presets under the categories _Loaded track_, _Search_, _Status_, and _Transport_ (Previous, Play/Pause, Next, Volume −, Volume +, Mute, Shuffle, Repeat).
 
 ## Compatibility
 
@@ -94,8 +101,9 @@ The Authorization Code flow uses TIDAL's hosted login page and the Bitfocus-host
 
 - Network playback control is not part of TIDAL's public Web API. The _Playback:_ actions always operate on the locally installed TIDAL desktop app via the selected **Playback control engine**. They cannot control a TIDAL Connect device on the network.
 - The `Focus + keystroke` engine briefly steals window focus on each press. Enable **Restore previously focused app after each press** to mitigate, or switch to `OS media keys` / `playerctl` for non-focus-stealing engines.
-- The `OS media keys` engine on macOS requires `nowplaying-cli` (`brew install nowplaying-cli`) and supports only Play/Pause / Next / Previous. Volume/Seek/Mute log "not supported" with this engine on macOS — fall back to `Focus + keystroke` for those.
-- The `playerctl` engine is Linux-only and requires `playerctl` installed plus a TIDAL client that exposes MPRIS (`tidal-hifi`, or the official desktop app on supporting distros).
-- Linux Wayland sessions cannot use `Focus + keystroke` — use `playerctl` or `OS media keys` (which redirects to `playerctl` on Linux) instead.
+- The `OS media keys` engine on macOS uses Apple's private `MRMediaRemoteSendCommand` API and falls back to `nowplaying-cli` if installed. It supports Play/Pause, Next, Previous, Shuffle, Repeat. Volume/Seek/Mute log "not supported" with this engine on macOS — fall back to `Focus + keystroke` for those.
+- The `playerctl` engine is Linux-only and requires `playerctl` installed plus a TIDAL client that exposes MPRIS (`tidal-hifi`, or the official desktop app on supporting distros). It supports all transport actions except `Cycle repeat mode` (no Toggle verb in `playerctl loop`).
+- TIDAL desktop has no native **Mute** keyboard shortcut. With the `Focus + keystroke` engine, _Playback: Toggle mute_ logs a "no mapping" warning. Use the `OS media keys` engine on Windows for OS-level mute, or `playerctl` on Linux (sets volume to 0 as a best-effort mute).
+- Linux Wayland support for `Focus + keystroke` is best-effort. We try `ydotool` first (compositor-agnostic when `ydotoold` is running and the user is in the `input` group), then `wtype` (limited to the currently focused window). The cleanest Wayland path remains `playerctl` / `OS media keys` (which redirects to `playerctl` on Linux).
 - All catalog endpoints require a `countryCode`; if you get `403`/`401` responses, double-check the configured value matches your TIDAL subscription region.
 - TIDAL's API version is referenced as `application/vnd.tidal.v1+json` in this module; if the upstream API changes, update `src/tidal-api.ts` accordingly.

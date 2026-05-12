@@ -132,9 +132,9 @@ Use this when you want a clean install or to share the module with another machi
    ```bash
    corepack yarn@4.12.0 install
    corepack yarn@4.12.0 package
-   # → writes ./tidal-0.1.0.tgz
+   # → writes ./tidal-<version>.tgz (e.g. tidal-0.4.0.tgz)
    ```
-2. In Companion/Buttons go to _Modules → Import module package_ and select `tidal-0.1.0.tgz`.
+2. In Companion/Buttons go to _Modules → Import module package_ and select the produced `tidal-<version>.tgz`.
 
 ---
 
@@ -168,16 +168,18 @@ After adding the connection you'll see this config UI:
 
 > If you ever need to re-run the OAuth dance, just blank the `Client Secret`, save, paste it back, save again — that clears the cached tokens and regenerates a fresh `Auth URL`.
 
-### Playback control (v0.3.0+)
+### Playback control (v0.3.0+, expanded in v0.4.0)
 
 Below the auth fields is the **Playback control** section:
 
-| Field                                            | What to enter                                                                                                                                                                                                                     |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Playback control engine**                      | Pick `Disabled` to make _Playback:_ actions no-op (default-safe), `Focus + keystroke` for the v0.2.0 behaviour, `OS media keys` for non-focus-stealing presses (needs `nowplaying-cli` on macOS), or `playerctl` for Linux MPRIS. |
-| **Restore previously focused app on each press** | Only affects `Focus + keystroke`. When ticked, the module records the active window before activating TIDAL and best-effort re-focuses it after the keystroke. Adds ~80–200 ms latency per press.                                 |
+| Field                                            | What to enter                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Playback control engine**                      | Pick `Disabled` to make _Playback:_ actions no-op, `Focus + keystroke` for the v0.2.0 behaviour, `OS media keys` for non-focus-stealing presses (macOS: built-in via private MediaRemote since v0.4.0, fallback to `nowplaying-cli` if installed), or `playerctl` for Linux MPRIS.                                                              |
+| **Restore previously focused app on each press** | Only affects `Focus + keystroke`. When ticked, the module records the active window before activating TIDAL and best-effort re-focuses it after the keystroke. Adds ~80–200 ms latency per press. _Silently ignored on Linux Wayland_ — the Wayland focus+keystroke path (added in v0.4.0) cannot activate windows from outside the compositor. |
 
 You can leave both at their defaults if you only intend to use the catalog/auth features. The _Playback:_ actions will be visible in the action picker either way, but with `Disabled` selected they'll log a warning and do nothing.
+
+> **Per-button engine override (v0.4.0+):** every _Playback:_ action also has an **Engine** dropdown on the action itself, defaulting to _Use connection config default_. Test it by setting one button's engine to something different than the connection default and confirming that single button uses the overridden engine while everything else keeps using the config-level setting.
 
 ---
 
@@ -230,9 +232,9 @@ Repeat with Kind = `albums`, `artists`, `playlists`, `videos`. Tracks Kind is th
 
 - Convenience wrapper for `tidal://track/<id>`. Quick way to chain Load-track → Open-track in a two-step preset.
 
-### 4.8 Playback actions — engine-aware _(v0.3.0+)_
+### 4.8 Playback actions — engine-aware _(v0.3.0+, expanded shortcuts/engines in v0.4.0)_
 
-**Prerequisite:** in the connection config, set **Playback control engine** to whichever engine you want to test. The default is `Focus + keystroke` (preserves v0.2.0 behaviour). To verify the no-op path, set it to `Disabled` and confirm presses log a warning instead of doing anything.
+**Prerequisite:** in the connection config, set **Playback control engine** to whichever engine you want to test. The default is `Focus + keystroke`. To verify the no-op path, set it to `Disabled` and confirm presses log a warning instead of doing anything.
 
 Common test preconditions for any non-`Disabled` engine:
 
@@ -242,44 +244,47 @@ Common test preconditions for any non-`Disabled` engine:
 
 Per-engine prerequisites:
 
-| Engine                | Extra requirements                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Disabled**          | none — every press logs a warning and is a no-op                                                                    |
-| **Focus + keystroke** | macOS: Accessibility permission granted to host (Companion/Buttons). Linux X11 only, with `xdotool` installed.      |
-| **OS media keys**     | macOS: `brew install nowplaying-cli`. Windows: nothing (PowerShell built-in). Linux: redirects to `playerctl`.      |
-| **playerctl**         | Linux only. `apt install playerctl` / `dnf install playerctl`. TIDAL desktop or `tidal-hifi` running with MPRIS on. |
+| Engine                | Extra requirements                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Disabled**          | none — every press logs a warning and is a no-op                                                                                                                                                                                                                                                                                                                                                   |
+| **Focus + keystroke** | macOS: Accessibility permission granted to host (Companion/Buttons). Linux X11: `xdotool` installed. Linux Wayland (v0.4.0+): `ydotool` _with `ydotoold` daemon running and user in `input` group_ (recommended) OR `wtype` (limited; only injects to focused window). Note: on Wayland we cannot activate the TIDAL window from outside, so `Restore previously focused app` is silently ignored. |
+| **OS media keys**     | macOS (v0.4.0+): no install needed — uses Apple's private MediaRemote via `osascript -l JavaScript`. Optional `brew install nowplaying-cli` acts as a fallback. Windows: nothing (PowerShell built-in). Linux: redirects to `playerctl`.                                                                                                                                                           |
+| **playerctl**         | Linux only. `apt install playerctl` / `dnf install playerctl`. TIDAL desktop or `tidal-hifi` running with MPRIS on.                                                                                                                                                                                                                                                                                |
 
-Now create one button per action and verify:
+Now create one button per action and verify (✓ = works, ✗ = not supported, logs a warning):
 
-| Action                           | Focus + keystroke (default) | OS media keys                                          | playerctl (Linux)        |
-| -------------------------------- | --------------------------- | ------------------------------------------------------ | ------------------------ |
-| Playback: Play / Pause           | `Space` → TIDAL toggles     | macOS via `nowplaying-cli togglePlayPause`, Win via VK | `playerctl play-pause`   |
-| Playback: Next track             | `⌘/Ctrl + →` → next         | Win/macOS: next via media key                          | `playerctl next`         |
-| Playback: Previous track         | `⌘/Ctrl + ←` → previous     | Win/macOS: previous via media key                      | `playerctl previous`     |
-| Playback: Seek forward           | `Shift + →` → ~10s forward  | **not supported** — falls back to log warning          | `playerctl position 10+` |
-| Playback: Seek backward          | `Shift + ←` → ~10s back     | **not supported** — falls back to log warning          | `playerctl position 10-` |
-| Playback: Volume up              | `⌘/Ctrl + ↑` → TIDAL +      | Win only (system volume up); macOS not supported       | `playerctl volume 0.05+` |
-| Playback: Volume down            | `⌘/Ctrl + ↓` → TIDAL -      | Win only (system volume down); macOS not supported     | `playerctl volume 0.05-` |
-| Playback: Toggle mute            | `⌘/Ctrl + M` → TIDAL mute   | Win only (system mute); macOS not supported            | `playerctl volume 0`     |
-| Playback: Send custom keyboard … | works                       | **error log** — pick `Focus + keystroke`               | **error log**            |
+| Action                               | Focus + keystroke shortcut sent                                                  | OS media keys (macOS / Windows)                                      | playerctl (Linux)                         |
+| ------------------------------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------- |
+| Playback: Play / Pause               | `Space`                                                                          | ✓ macOS (`MRMediaRemote` cmd 2), ✓ Windows (`VK_MEDIA_PLAY_PAUSE`)   | `playerctl play-pause`                    |
+| Playback: Next track                 | `Ctrl + →`                                                                       | ✓ macOS (cmd 4), ✓ Windows (`VK_MEDIA_NEXT_TRACK`)                   | `playerctl next`                          |
+| Playback: Previous track             | `Ctrl + ←`                                                                       | ✓ macOS (cmd 5), ✓ Windows (`VK_MEDIA_PREV_TRACK`)                   | `playerctl previous`                      |
+| Playback: Seek forward (±10s)        | `Ctrl + Shift + →` _(corrected in v0.4.0; was just `Shift + →` in v0.2.0/0.3.0)_ | ✗ macOS / ✗ Windows — log warning                                    | `playerctl position 10+`                  |
+| Playback: Seek backward (±10s)       | `Ctrl + Shift + ←` _(corrected in v0.4.0)_                                       | ✗ macOS / ✗ Windows — log warning                                    | `playerctl position 10-`                  |
+| Playback: Volume up                  | `Ctrl + ↑`                                                                       | ✗ macOS / ✓ Windows (`VK_VOLUME_UP` — system volume, not TIDAL-app)  | `playerctl volume 0.05+`                  |
+| Playback: Volume down                | `Ctrl + ↓`                                                                       | ✗ macOS / ✓ Windows (`VK_VOLUME_DOWN`)                               | `playerctl volume 0.05-`                  |
+| Playback: Toggle mute                | _no native TIDAL shortcut_ — log warning (v0.4.0)                                | ✗ macOS / ✓ Windows (`VK_VOLUME_MUTE` — system mute)                 | `playerctl volume 0`                      |
+| Playback: Toggle shuffle _(v0.4.0+)_ | `Ctrl + S`                                                                       | ✓ macOS (cmd 6) / ✗ Windows                                          | `playerctl shuffle Toggle`                |
+| Playback: Cycle repeat _(v0.4.0+)_   | `Ctrl + R`                                                                       | ✓ macOS (cmd 7) / ✗ Windows                                          | ✗ — playerctl has no Toggle verb for loop |
+| Playback: Send custom keyboard …     | works                                                                            | **error log** — falls through to focus_keystroke per engine selector | **error log**                             |
 
 **What "works" looks like:**
 
-- With **Focus + keystroke**: TIDAL window flashes / comes to front, shortcut takes effect. If **Restore previously focused app** is enabled, focus snaps back to your previous app after ~80–200 ms.
-- With **OS media keys**: nothing visible happens to TIDAL's window; the playback state simply changes (Play→Pause etc.). If multiple media apps are running, the press might affect whichever one most recently played audio.
+- With **Focus + keystroke**: TIDAL window flashes / comes to front, shortcut takes effect. If **Restore previously focused app** is enabled (X11 / macOS / Windows only), focus snaps back to your previous app after ~80–200 ms.
+- With **OS media keys**: nothing visible happens to TIDAL's window; the playback state simply changes (Play→Pause etc.). On Windows volume actions affect the **system** volume, not TIDAL's per-app volume. On macOS v0.4.0+ commands are routed straight to whichever app owns the OS media session — usually TIDAL when it's actively playing.
 - With **playerctl**: same — no window movement; TIDAL responds because MPRIS is targeted at it by name.
 - With **Disabled**: nothing visible; the connection log shows `playback_play_pause skipped (engine=disabled): Playback control engine is set to "Disabled"…`.
 
 **Troubleshooting per OS & engine:**
 
 - **macOS, Focus + keystroke first run**: macOS prompts for _Accessibility_ permission for whatever process is running `osascript` (Companion or Buttons itself). Approve under _System Settings → Privacy & Security → Accessibility_. Without it, presses are silently no-ops.
-- **macOS, OS media keys**: `nowplaying-cli` must be on PATH. `which nowplaying-cli` should resolve to `/opt/homebrew/bin/nowplaying-cli` or `/usr/local/bin/nowplaying-cli`. Otherwise the log says `nowplaying-cli not found`.
+- **macOS, OS media keys (v0.4.0+)**: should "just work" without `nowplaying-cli`. If the log says `JXA MRMediaRemoteSendCommand failed`, Apple may have moved the symbol — install `nowplaying-cli` as a fallback (`brew install nowplaying-cli`) and the module will use it transparently.
 - **Windows, Focus + keystroke**: if the action seems to do nothing, run `Get-Command powershell` in PowerShell to confirm `powershell` resolves. PowerShell 5.1 (built-in) is what we use; PowerShell 7 (`pwsh`) is **not** required.
 - **Windows, OS media keys**: first press has ~1 s of `Add-Type` compile latency. If you see `Add-Type` errors in the log, .NET Framework 4.x is missing — should never happen on Windows 10/11.
-- **Linux**: `which xdotool` (for Focus+keystroke) or `which playerctl` (for media-keys/playerctl) must succeed. On Wayland (`echo $XDG_SESSION_TYPE` returns `wayland`), Focus+keystroke will fail with a clear log message; use `playerctl` instead.
+- **Linux X11**: `which xdotool` must succeed for Focus+keystroke; `which playerctl` for the playerctl engine.
+- **Linux Wayland (v0.4.0+)**: `echo $XDG_SESSION_TYPE` returns `wayland`. Focus+keystroke now attempts `ydotool` first, then `wtype`. To set up `ydotool`: install the package, start the `ydotoold` daemon (`systemctl --user enable --now ydotoold` or `sudo systemctl enable --now ydotoold` depending on your distro), and add your user to the `input` group (`sudo usermod -aG input $USER` and log out/in). To verify: `ydotool key 57:1 57:0` should send a Space keypress to the focused window. If neither tool is installed, the log says `Linux Wayland focus_keystroke needs either ydotool … or wtype …`. The cleanest Wayland path is to use the `playerctl` engine instead.
 - **All OS**: confirm the connection has `child-process` permission. If denied, the log will show `child_process spawn denied`.
 
-**Quick smoke-test sequence (~30s):**
+**Quick smoke-test sequence (~45s):**
 
 1. Start a track playing in TIDAL.
 2. Press **Play / Pause** → audio stops.
@@ -287,28 +292,34 @@ Now create one button per action and verify:
 4. Press **Next track** → moves to next track.
 5. Press **Volume down** twice → audible drop.
 6. Press **Volume up** twice → audible rise.
+7. Press **Shuffle** → TIDAL's shuffle indicator toggles. _(new in v0.4.0)_
+8. Press **Repeat** → TIDAL cycles through Off → All → One. _(new in v0.4.0)_
+9. Press **Seek forward** → playback position jumps ~10s forward. _(verifies the v0.4.0 Ctrl+Shift+→ fix)_
 
 Repeat for each engine you care about by flipping the **Playback control engine** dropdown in the connection config and **Save**ing.
 
-If any step fails, check the connection log for the specific error string — `osascript`, `powershell`, `xdotool`, `nowplaying-cli`, or `playerctl` will appear in the error message and tell you which platform branch failed.
+If any step fails, check the connection log for the specific error string — `osascript`, `powershell`, `xdotool`, `ydotool`, `wtype`, `nowplaying-cli`, or `playerctl` will appear in the error message and tell you which platform branch failed.
 
 ### 4.9 Playback: Send custom keyboard shortcut
 
-Use this to bind any TIDAL shortcut we haven't wrapped explicitly. **Requires Playback control engine = Focus + keystroke** — other engines will reject this action with a clear log message.
+Use this to bind any TIDAL shortcut we haven't wrapped explicitly. **Requires the chosen Engine to be `Focus + keystroke`** (either at the connection level or via the per-button Engine dropdown). Other engines log a warning and skip.
 
-- **Action options:** Key = `f` (or any key from the dropdown), Modifiers = `[]` (or any combination).
+- **Action options:** Key = `f` (or any key from the dropdown), Modifiers = `[]` (or any combination), Engine = `Use connection config default` (or override per-button).
 - **Expected:** TIDAL window activates and receives `F` (which favorites the current track in current builds), or whatever shortcut you chose.
-- **Use case:** custom power-user mappings without needing a module update.
+- **Use case:** custom power-user mappings without needing a module update — or a per-button override of the connection's engine (e.g., bind a single button to `Focus + keystroke` while the rest use `OS media keys`).
 
-### 4.10 Engine fall-through tests _(v0.3.0+)_
+### 4.10 Engine fall-through tests _(v0.3.0+, per-button overrides in v0.4.0)_
 
 Quick checks that the engine selector behaves cleanly:
 
-1. Set **Playback control engine** = `Disabled`. Press any Playback button. Expected: connection log says `playback_play_pause skipped (engine=disabled): Playback control engine is set to "Disabled"…`. Nothing happens.
+1. Set **Playback control engine** = `Disabled`. Press any Playback button **without** overriding the per-button engine. Expected: connection log says `playback_play_pause skipped (engine=disabled): Playback control engine is set to "Disabled"…`. Nothing happens.
 2. Set engine = `OS media keys` and press **Playback: Seek forward** (macOS). Expected: log says `playback_seek_forward skipped (engine=media_keys): seek_forward is not supported by the macOS media-keys engine…`.
 3. Set engine = `playerctl` and press **Playback: Send custom keyboard shortcut** (any combo). Expected: log says `playback_send_shortcut … skipped (engine=playerctl): Custom keyboard shortcuts only work with the "Focus + keystroke" engine.`
 4. Set engine = `playerctl` on macOS/Windows (where it's not supported) and press **Playback: Play / Pause**. Expected: log says `playerctl could not find an MPRIS-exposing TIDAL client…` (because `playerctl` itself isn't on macOS/Windows).
-5. With engine = `Focus + keystroke` and **Restore previously focused app** enabled: focus your text editor, press **Playback: Play / Pause** on a Stream Deck, your text editor should regain focus within ~200 ms.
+5. With engine = `Focus + keystroke` and **Restore previously focused app** enabled: focus your text editor, press **Playback: Play / Pause** on a Stream Deck — your text editor should regain focus within ~200 ms.
+6. **Per-button engine override (v0.4.0)**: With connection engine = `Disabled`, override **one** button's Engine option to `Focus + keystroke`. Pressing that button should still control TIDAL while every other Playback button stays a no-op.
+7. **Cycle Repeat under playerctl (v0.4.0)**: with engine = `playerctl`, press **Playback: Cycle repeat mode**. Expected: log says `playback_repeat_toggle skipped (engine=playerctl): repeat_toggle is not in PLAYERCTL_COMMANDS…` (or equivalent). Switch to `Focus + keystroke` and the same button should work.
+8. **Mute under focus_keystroke (v0.4.0)**: with engine = `Focus + keystroke`, press **Playback: Toggle mute**. Expected: log says `playback_mute_toggle skipped (engine=focus_keystroke): TIDAL desktop does not have a native mute keyboard shortcut…`. Switch to `OS media keys` (Windows) or `playerctl` (Linux) and the same button should work.
 
 ---
 
@@ -327,7 +338,7 @@ Use the bundled presets to get a quick visual confirmation:
 - _Status / TIDAL authentication state_ (also acts as a one-tap **Refresh access token** button).
 - _Search / Search first result_ (turns green when there are results).
 - _Loaded track / Now-loaded track title_ (turns red when explicit).
-- _Transport / Play-Pause, Next, Previous, Volume ± , Mute_ — drag onto a button page for an instant transport bar.
+- _Transport / Previous, Play-Pause, Next, Volume −, Volume +, Mute, Shuffle, Repeat_ — drag onto a button page for an instant transport bar.
 
 ---
 
@@ -365,7 +376,7 @@ corepack yarn@4.12.0 lint
 corepack yarn@4.12.0 format       # prettier
 
 # Produce an installable tgz
-corepack yarn@4.12.0 package      # writes ./tidal-0.1.0.tgz
+corepack yarn@4.12.0 package      # writes ./tidal-<version>.tgz
 ```
 
 Whenever you change `src/`, restart the connection in Companion/Buttons to pick up the new `dist/main.js`. You do not need to restart the whole app.

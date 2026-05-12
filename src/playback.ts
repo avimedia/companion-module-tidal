@@ -131,6 +131,8 @@ export type SemanticCommand =
 	| 'volume_up'
 	| 'volume_down'
 	| 'mute_toggle'
+	| 'shuffle_toggle'
+	| 'repeat_toggle'
 
 export type CustomShortcutCommand = {
 	type: 'custom_shortcut'
@@ -229,19 +231,43 @@ function isLikelyWayland(): boolean {
 // Engine: focus + keystroke
 // ---------------------------------------------------------------------------
 
-const SEMANTIC_TO_SHORTCUT: Record<SemanticCommand, { key: ShortcutKey; modifiers: AbstractModifier[] }> = {
+// TIDAL desktop in-app keyboard shortcuts. Verified against the documented
+// shortcut set (TutorialTactic, AudFree, DefKey, TuneSmake, CheatKeys) in
+// May 2026. If TIDAL rebinds any of these in a future update, users can
+// override via the per-button engine option or fall back to the
+// "Send custom keyboard shortcut" action.
+//
+// Notes:
+// - Seek ±10s requires Ctrl + Shift (not Shift alone) — this was fixed in v0.4.0.
+// - TIDAL does NOT publish a native mute shortcut. The `mute_toggle` semantic
+//   command therefore has no in-app shortcut; with the focus_keystroke engine
+//   it falls back to nothing and logs a warning. Use the OS media keys engine
+//   on Windows for the OS-level mute, or playerctl `volume 0` on Linux.
+const SEMANTIC_TO_SHORTCUT: Partial<Record<SemanticCommand, { key: ShortcutKey; modifiers: AbstractModifier[] }>> = {
 	play_pause: { key: 'space', modifiers: [] },
 	next: { key: 'right', modifiers: ['cmdOrCtrl'] },
 	previous: { key: 'left', modifiers: ['cmdOrCtrl'] },
-	seek_forward: { key: 'right', modifiers: ['shift'] },
-	seek_backward: { key: 'left', modifiers: ['shift'] },
+	seek_forward: { key: 'right', modifiers: ['cmdOrCtrl', 'shift'] },
+	seek_backward: { key: 'left', modifiers: ['cmdOrCtrl', 'shift'] },
 	volume_up: { key: 'up', modifiers: ['cmdOrCtrl'] },
 	volume_down: { key: 'down', modifiers: ['cmdOrCtrl'] },
-	mute_toggle: { key: 'm', modifiers: ['cmdOrCtrl'] },
+	shuffle_toggle: { key: 's', modifiers: ['cmdOrCtrl'] },
+	repeat_toggle: { key: 'r', modifiers: ['cmdOrCtrl'] },
+	// mute_toggle deliberately omitted — TIDAL has no native mute shortcut.
 }
 
 async function executeFocusKeystroke(cmd: SemanticCommand, restoreFocus: boolean): Promise<PlaybackResult> {
 	const mapping = SEMANTIC_TO_SHORTCUT[cmd]
+	if (!mapping) {
+		return {
+			ok: false,
+			engine: 'focus_keystroke',
+			reason:
+				cmd === 'mute_toggle'
+					? 'TIDAL desktop does not have a native mute keyboard shortcut, so the focus_keystroke engine cannot toggle mute. Use the "OS media keys" engine on Windows for the OS-level mute, or "playerctl" on Linux (sets volume to 0).'
+					: `Semantic command "${cmd}" has no TIDAL keyboard shortcut mapped in this module. Use the "Playback: Send custom keyboard shortcut" action to send an arbitrary key combo.`,
+		}
+	}
 	try {
 		await sendShortcutViaFocus(mapping.key, mapping.modifiers, restoreFocus)
 		return { ok: true, engine: 'focus_keystroke' }
@@ -409,12 +435,8 @@ async function sendShortcutLinux(
 	const combo = linuxModifierPrefix(modifiers) + keyToken
 
 	if (isLikelyWayland()) {
-		// Wayland: no equivalent to xdotool for cross-app keystroke injection
-		// without compositor cooperation. wtype only synthesises keys into the
-		// currently focused window, so we cannot reliably target TIDAL.
-		throw new Error(
-			'Linux Wayland sessions do not support the focus_keystroke engine. Switch the Playback control engine to "playerctl" or "media_keys" (which redirects to playerctl on Linux).',
-		)
+		await sendShortcutLinuxWayland(key, keyToken, modifiers, combo)
+		return
 	}
 
 	// X11 path. Without restoreFocus we send the combo to the TIDAL window and
@@ -431,6 +453,154 @@ async function sendShortcutLinux(
 	if (trimmed) {
 		await execFilePromise('xdotool', ['windowactivate', '--sync', trimmed])
 	}
+}
+
+// ---- Wayland focus + keystroke (best effort) -----------------------------
+
+// Wayland intentionally prevents apps from injecting keystrokes into other
+// windows without compositor cooperation, so there's no clean equivalent to
+// xdotool. Best-effort approach:
+//
+//   1. Prefer `ydotool` if available. ydotool injects events at the kernel
+//      uinput layer, so it works compositor-agnostic — *if* the user has set
+//      up `ydotoold` (the system daemon) and either runs Companion as root or
+//      added their user to the `input` group.
+//   2. Fall back to `wtype`, which only sends keys to the currently focused
+//      window. The user needs to ensure TIDAL is the focused app, or wire the
+//      Stream Deck press to a workflow that briefly focuses TIDAL first
+//      (e.g. via a compositor-specific helper like `kdotool` for KDE Wayland).
+//
+// In both cases we cannot reliably activate the TIDAL window from outside, so
+// `restoreFocus` is silently ignored on Wayland.
+async function sendShortcutLinuxWayland(
+	key: ShortcutKey,
+	keyToken: string,
+	modifiers: AbstractModifier[],
+	combo: string,
+): Promise<void> {
+	const ydotoolAvailable = await commandExists('ydotool')
+	if (ydotoolAvailable) {
+		await sendWaylandKeystrokeYdotool(key, modifiers)
+		return
+	}
+
+	const wtypeAvailable = await commandExists('wtype')
+	if (wtypeAvailable) {
+		await sendWaylandKeystrokeWtype(keyToken, modifiers)
+		return
+	}
+
+	throw new Error(
+		`Linux Wayland focus_keystroke needs either \`ydotool\` (with the \`ydotoold\` daemon running and your user in the \`input\` group) or \`wtype\` installed. Neither was found on PATH. Combo we tried to send: ${combo}. Alternatives: switch the Playback control engine to "playerctl" (deterministic) or "media_keys" (which redirects to playerctl on Linux).`,
+	)
+}
+
+async function commandExists(cmd: string): Promise<boolean> {
+	try {
+		await execFilePromise('command', ['-v', cmd])
+		return true
+	} catch {
+		try {
+			await execFilePromise('which', [cmd])
+			return true
+		} catch {
+			return false
+		}
+	}
+}
+
+// ydotool key codes for our supported keys. ydotool uses Linux input event
+// codes from <linux/input-event-codes.h>; the syntax is `ydotool key
+// <code>:<state>` with state=1 for press and 0 for release.
+const YDOTOOL_KEYCODES: Partial<Record<ShortcutKey, number>> = {
+	space: 57,
+	left: 105,
+	right: 106,
+	up: 103,
+	down: 108,
+	enter: 28,
+	escape: 1,
+	tab: 15,
+	a: 30,
+	b: 48,
+	c: 46,
+	d: 32,
+	e: 18,
+	f: 33,
+	g: 34,
+	h: 35,
+	i: 23,
+	j: 36,
+	k: 37,
+	l: 38,
+	m: 50,
+	n: 49,
+	o: 24,
+	p: 25,
+	q: 16,
+	r: 19,
+	s: 31,
+	t: 20,
+	u: 22,
+	v: 47,
+	w: 17,
+	x: 45,
+	y: 21,
+	z: 44,
+	'0': 11,
+	'1': 2,
+	'2': 3,
+	'3': 4,
+	'4': 5,
+	'5': 6,
+	'6': 7,
+	'7': 8,
+	'8': 9,
+	'9': 10,
+}
+
+const YDOTOOL_MOD_KEYCODES: Record<AbstractModifier, number> = {
+	cmdOrCtrl: 29, // KEY_LEFTCTRL
+	shift: 42, // KEY_LEFTSHIFT
+	alt: 56, // KEY_LEFTALT
+}
+
+async function sendWaylandKeystrokeYdotool(key: ShortcutKey, modifiers: AbstractModifier[]): Promise<void> {
+	const keyCode = YDOTOOL_KEYCODES[key]
+	if (keyCode === undefined) {
+		throw new Error(`Wayland/ydotool path has no key-code mapping for "${key}".`)
+	}
+
+	// Press modifiers, press key, release key, release modifiers.
+	const pressArgs: string[] = ['key']
+	const releaseArgs: string[] = ['key']
+	for (const mod of modifiers) {
+		pressArgs.push(`${YDOTOOL_MOD_KEYCODES[mod]}:1`)
+		releaseArgs.unshift(`${YDOTOOL_MOD_KEYCODES[mod]}:0`)
+	}
+	pressArgs.push(`${keyCode}:1`, `${keyCode}:0`)
+
+	await execFilePromise('ydotool', pressArgs)
+	if (releaseArgs.length > 1) {
+		await execFilePromise('ydotool', releaseArgs)
+	}
+}
+
+// wtype takes a -k flag with the X11 keysym name plus -M/-m for modifiers.
+async function sendWaylandKeystrokeWtype(keyToken: string, modifiers: AbstractModifier[]): Promise<void> {
+	const wtypeModNames: string[] = []
+	for (const mod of modifiers) {
+		if (mod === 'cmdOrCtrl') wtypeModNames.push('ctrl')
+		else if (mod === 'shift') wtypeModNames.push('shift')
+		else if (mod === 'alt') wtypeModNames.push('alt')
+	}
+
+	const args: string[] = []
+	for (const m of wtypeModNames) args.push('-M', m)
+	args.push('-k', keyToken)
+	for (const m of wtypeModNames) args.push('-m', m)
+
+	await execFilePromise('wtype', args)
 }
 
 // ---------------------------------------------------------------------------
@@ -456,10 +626,27 @@ async function executeMediaKeys(cmd: SemanticCommand): Promise<PlaybackResult> {
 	}
 }
 
-// macOS media keys via the private MediaRemote framework. We don't bundle a
-// compiled helper; instead we look for `nowplaying-cli` (an open-source CLI
-// wrapping the same API). If the binary isn't on PATH we fail with a clear
-// install hint.
+// macOS media keys.
+//
+// Primary path: a JXA (JavaScript-for-Automation) script that dlopen()s the
+// private MediaRemote framework and calls MRMediaRemoteSendCommand directly.
+// No external dependencies. Apple has kept this private function stable
+// across macOS versions since ~10.12.5, but since it's private we transparently
+// fall back to nowplaying-cli if present.
+//
+// MRMediaRemoteCommand enum (reverse-engineered):
+//   0 Play, 1 Pause, 2 TogglePlayPause, 3 Stop,
+//   4 NextTrack, 5 PreviousTrack,
+//   6 AdvanceShuffleMode, 7 AdvanceRepeatMode,
+//   8 BeginFastForward, 9 EndFastForward, 10 BeginRewind, 11 EndRewind, ...
+const MACOS_MRMEDIA_COMMANDS: Partial<Record<SemanticCommand, number>> = {
+	play_pause: 2,
+	next: 4,
+	previous: 5,
+	shuffle_toggle: 6,
+	repeat_toggle: 7,
+}
+
 const MACOS_NOWPLAYING_PATHS = ['/opt/homebrew/bin/nowplaying-cli', '/usr/local/bin/nowplaying-cli', 'nowplaying-cli']
 
 const MACOS_NOWPLAYING_COMMANDS: Partial<Record<SemanticCommand, string>> = {
@@ -469,30 +656,55 @@ const MACOS_NOWPLAYING_COMMANDS: Partial<Record<SemanticCommand, string>> = {
 }
 
 async function mediaKeysMacos(cmd: SemanticCommand): Promise<PlaybackResult> {
-	const arg = MACOS_NOWPLAYING_COMMANDS[cmd]
-	if (!arg) {
+	const mrCommand = MACOS_MRMEDIA_COMMANDS[cmd]
+	if (mrCommand === undefined) {
 		return {
 			ok: false,
 			engine: 'media_keys',
-			reason: `${cmd} is not supported by the macOS media-keys engine (only play_pause/next/previous via nowplaying-cli). Use the focus_keystroke engine for volume/seek/mute.`,
+			reason: `${cmd} is not supported by the macOS media-keys engine. Supported: play_pause, next, previous, shuffle_toggle, repeat_toggle. Use the focus_keystroke engine for volume/seek/mute.`,
 		}
 	}
 
-	for (const path of MACOS_NOWPLAYING_PATHS) {
-		try {
-			await execFilePromise(path, [arg])
-			return { ok: true, engine: 'media_keys' }
-		} catch {
-			// try next path
+	// Primary: JXA + MRMediaRemoteSendCommand via dlopen.
+	try {
+		await sendMacosMediaRemoteCommand(mrCommand)
+		return { ok: true, engine: 'media_keys' }
+	} catch (primaryErr) {
+		// Fallback: nowplaying-cli if installed (covers play/next/previous only).
+		const nowplayingArg = MACOS_NOWPLAYING_COMMANDS[cmd]
+		if (nowplayingArg) {
+			for (const path of MACOS_NOWPLAYING_PATHS) {
+				try {
+					await execFilePromise(path, [nowplayingArg])
+					return { ok: true, engine: 'media_keys' }
+				} catch {
+					// try next path
+				}
+			}
+		}
+
+		return {
+			ok: false,
+			engine: 'media_keys',
+			reason: `JXA MRMediaRemoteSendCommand failed (${(primaryErr as Error).message}); fallback nowplaying-cli is also unavailable. Install nowplaying-cli with \`brew install nowplaying-cli\` as a backup, or switch the Playback control engine to "focus_keystroke".`,
 		}
 	}
+}
 
-	return {
-		ok: false,
-		engine: 'media_keys',
-		reason:
-			'nowplaying-cli not found. Install it with `brew install nowplaying-cli` (https://github.com/kirtan-shah/nowplaying-cli), or switch the Playback control engine to "focus_keystroke".',
-	}
+async function sendMacosMediaRemoteCommand(command: number): Promise<void> {
+	// dlopen flag 6 = RTLD_NOW | RTLD_GLOBAL — required so the symbol becomes
+	// visible to ObjC.bindFunction. After bindFunction the C function is
+	// accessible on the JXA global `$` namespace as $.MRMediaRemoteSendCommand.
+	const script = [
+		"ObjC.import('Foundation')",
+		"ObjC.import('CoreFoundation')",
+		"const h = $.dlopen('/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote', 6)",
+		"if (!h) { throw new Error('dlopen MediaRemote returned null') }",
+		"ObjC.bindFunction('MRMediaRemoteSendCommand', ['void', ['int', 'id']])",
+		`$.MRMediaRemoteSendCommand(${command}, $())`,
+	].join('\n')
+
+	await execFilePromise('osascript', ['-l', 'JavaScript', '-e', script])
 }
 
 // Windows media keys via PowerShell P/Invoke into user32.dll!keybd_event.
@@ -549,6 +761,9 @@ const PLAYERCTL_COMMANDS: Partial<Record<SemanticCommand, string[]>> = {
 	mute_toggle: ['volume', '0'], // best effort — true mute toggle is not in MPRIS
 	seek_forward: ['position', '10+'],
 	seek_backward: ['position', '10-'],
+	shuffle_toggle: ['shuffle', 'Toggle'],
+	// repeat_toggle intentionally omitted — playerctl has `loop None|Track|Playlist`
+	// but no Toggle verb, so we cannot cycle without reading current state.
 }
 
 async function executePlayerctl(cmd: SemanticCommand): Promise<PlaybackResult> {

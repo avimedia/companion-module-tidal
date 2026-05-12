@@ -57,23 +57,47 @@ TIDAL's public Web API does not expose a "play on device" endpoint comparable to
 
 The behaviour is governed by a single connection-config setting — **Playback control engine** — with four options:
 
-| Engine                          | What it does                                               | Focus theft   | Cross-platform                                                                     |
-| ------------------------------- | ---------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
-| `Disabled`                      | _Playback:_ actions log a warning and do nothing           | n/a           | n/a                                                                                |
-| `Focus + keystroke` _(default)_ | Activates TIDAL window, sends the in-app keyboard shortcut | yes (briefly) | macOS / Windows / Linux X11                                                        |
-| `OS media keys`                 | Sends global media keys; non-focus-stealing                | no            | macOS (needs `nowplaying-cli`), Windows (built-in), Linux (redirects to playerctl) |
-| `playerctl`                     | Targets TIDAL specifically over MPRIS                      | no            | Linux only                                                                         |
+| Engine                          | What it does                                               | Focus theft   | Cross-platform                                                                                                               |
+| ------------------------------- | ---------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `Disabled`                      | _Playback:_ actions log a warning and do nothing           | n/a           | n/a                                                                                                                          |
+| `Focus + keystroke` _(default)_ | Activates TIDAL window, sends the in-app keyboard shortcut | yes (briefly) | macOS / Windows / Linux (X11 native, Wayland best-effort)                                                                    |
+| `OS media keys`                 | Sends global media keys; non-focus-stealing                | no            | macOS (built-in via private MediaRemote, with `nowplaying-cli` fallback), Windows (built-in), Linux (redirects to playerctl) |
+| `playerctl`                     | Targets TIDAL specifically over MPRIS                      | no            | Linux only                                                                                                                   |
 
-An additional checkbox — **Restore previously focused app after each press** — only applies to the `Focus + keystroke` engine and best-effort returns focus to the previous foreground app after the keystroke is delivered.
+An additional checkbox — **Restore previously focused app after each press** — only applies to the `Focus + keystroke` engine and best-effort returns focus to the previous foreground app after the keystroke is delivered. _(Ignored on Wayland — the Wayland path cannot reliably activate windows from outside.)_
+
+Every _Playback:_ action also has a per-button **Engine** dropdown that defaults to _Use connection config default_. Set a specific engine on a single button if you want, e.g., a no-focus-stealing Play/Pause via `OS media keys` while the rest of your transport stays on `Focus + keystroke`.
 
 ### Per-engine implementation notes
 
-- **Focus + keystroke** (cross-platform): macOS via `osascript` + `System Events`; Windows via PowerShell + `WScript.Shell.AppActivate` + `SendKeys`; Linux X11 via `xdotool search --name TIDAL windowactivate --sync key <combo>`. Linux Wayland not supported — `wtype` cannot reliably target a backgrounded TIDAL window.
+- **Focus + keystroke** (cross-platform):
+  - macOS: `osascript` + `System Events`, using key-codes for arrows/space and `keystroke "<letter>"` for alphanumerics.
+  - Windows: PowerShell + `WScript.Shell.AppActivate` + `SendKeys`.
+  - Linux X11: `xdotool search --name TIDAL windowactivate --sync key <combo>`.
+  - Linux Wayland (best-effort, added in 0.4.0): prefers `ydotool` when available (compositor-agnostic via kernel uinput — requires the `ydotoold` daemon running and the user in the `input` group); falls back to `wtype` (only injects to the currently focused window, so the user must have TIDAL focused at the time of the press). If neither tool is installed the engine reports a clear error and points at `playerctl`.
 - **OS media keys**:
-  - macOS: shells out to [`nowplaying-cli`](https://github.com/kirtan-shah/nowplaying-cli) (`brew install nowplaying-cli`). The CLI wraps Apple's private `MRMediaRemoteSendCommand`. Only Play/Pause, Next, Previous are supported in this engine on macOS — for Volume/Seek/Mute fall back to `Focus + keystroke`.
-  - Windows: PowerShell P/Invoke to `user32.dll!keybd_event` with `VK_MEDIA_PLAY_PAUSE` / `VK_MEDIA_NEXT_TRACK` / `VK_MEDIA_PREV_TRACK` / `VK_VOLUME_UP` / `VK_VOLUME_DOWN` / `VK_VOLUME_MUTE`. Seek isn't a Windows media key.
+  - macOS (rewritten in 0.4.0): JXA script that `dlopen`s `/System/Library/PrivateFrameworks/MediaRemote.framework` and calls `MRMediaRemoteSendCommand` directly. No external dependencies. Supports Play/Pause, Next, Previous, Shuffle, Repeat (MRMediaRemoteCommand enum values 2, 4, 5, 6, 7). Transparently falls back to [`nowplaying-cli`](https://github.com/kirtan-shah/nowplaying-cli) if installed and the JXA path ever fails. Volume/Seek/Mute log "not supported" — fall back to `Focus + keystroke`.
+  - Windows: PowerShell P/Invoke to `user32.dll!keybd_event` with `VK_MEDIA_PLAY_PAUSE` / `VK_MEDIA_NEXT_TRACK` / `VK_MEDIA_PREV_TRACK` / `VK_VOLUME_UP` / `VK_VOLUME_DOWN` / `VK_VOLUME_MUTE`. Seek/Shuffle/Repeat aren't Windows media keys, so they log "not supported".
   - Linux: transparently redirects to the `playerctl` engine because Linux's equivalent of "global media keys" is the MPRIS bus.
-- **playerctl**: targets `playerctl --player=tidal-hifi,tidal,TIDAL` so it works against both the unofficial [tidal-hifi](https://github.com/Mastermindzh/tidal-hifi) Electron client and the official desktop app where it exposes MPRIS. Volume actions use `0.05+`/`0.05-` increments; seek actions use `±10` second offsets.
+- **playerctl**: targets `playerctl --player=tidal-hifi,tidal,TIDAL` so it works against both the unofficial [tidal-hifi](https://github.com/Mastermindzh/tidal-hifi) Electron client and the official desktop app where it exposes MPRIS. Volume actions use `0.05+`/`0.05-` increments; seek actions use `±10` second offsets; Shuffle uses `shuffle Toggle`. _Repeat cycle is intentionally unsupported_ via `playerctl` because the CLI has no Toggle verb for `loop`; the focus_keystroke engine is the recommended path for repeat.
+
+### TIDAL desktop shortcut bindings
+
+The `Focus + keystroke` engine drives in-app shortcuts. Verified against publicly documented TIDAL desktop bindings (TutorialTactic, AudFree, DefKey, TuneSmake, CheatKeys) in May 2026:
+
+| Action            | Shortcut sent                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------------- |
+| Play / Pause      | `Space`                                                                                      |
+| Next track        | `Ctrl + →`                                                                                   |
+| Previous track    | `Ctrl + ←`                                                                                   |
+| Seek forward 10s  | `Ctrl + Shift + →`                                                                           |
+| Seek backward 10s | `Ctrl + Shift + ←`                                                                           |
+| Volume up / down  | `Ctrl + ↑ / Ctrl + ↓`                                                                        |
+| Shuffle toggle    | `Ctrl + S`                                                                                   |
+| Repeat cycle      | `Ctrl + R`                                                                                   |
+| Toggle mute       | _no TIDAL shortcut_ — logs warning; use OS media keys (Windows) or playerctl (Linux) instead |
+
+(`Ctrl` on Windows/Linux, `Cmd` on macOS for those marked Ctrl in TIDAL's docs — the module sends the platform-appropriate modifier.) If TIDAL changes any binding in a future update, override per button with the _Send custom keyboard shortcut_ action.
 
 All engines share the same _Playback:_ actions in the UI — switching engines does not require re-wiring buttons.
 
