@@ -27,6 +27,11 @@ import { platform, env } from 'node:process'
 
 export type PlaybackEngine = 'disabled' | 'focus_keystroke' | 'media_keys' | 'playerctl'
 
+// Sentinel value used by per-button engine dropdowns to mean "fall through to
+// the connection-level Playback control engine setting". Exported so the
+// preset definitions and action callbacks share a single source of truth.
+export const PLAYBACK_ENGINE_DEFAULT_CHOICE = '__use_connection_default__'
+
 export type AbstractModifier = 'cmdOrCtrl' | 'shift' | 'alt'
 
 export type ShortcutKey =
@@ -614,12 +619,20 @@ async function executeMediaKeys(cmd: SemanticCommand): Promise<PlaybackResult> {
 				return await mediaKeysMacos(cmd)
 			case 'win32':
 				return await mediaKeysWindows(cmd)
-			default:
+			default: {
 				// On Linux there's no separate "media keys" API; the equivalent is
 				// the MPRIS bus which is exactly what the playerctl engine targets.
 				// We transparently redirect so users don't have to know the
-				// distinction.
-				return await executePlayerctl(cmd)
+				// distinction — but rewrite the result so the user-facing engine
+				// stays "media_keys", with the playerctl provenance noted in the
+				// reason (if any).
+				const r = await executePlayerctl(cmd)
+				return {
+					...r,
+					engine: 'media_keys',
+					reason: r.reason ? `(via playerctl on Linux) ${r.reason}` : r.reason,
+				}
+			}
 		}
 	} catch (err) {
 		return { ok: false, engine: 'media_keys', reason: (err as Error).message }
@@ -723,7 +736,7 @@ async function mediaKeysWindows(cmd: SemanticCommand): Promise<PlaybackResult> {
 		return {
 			ok: false,
 			engine: 'media_keys',
-			reason: `${cmd} is not supported by the Windows media-keys engine. Use the focus_keystroke engine for seek actions.`,
+			reason: `${cmd} is not supported by the Windows media-keys engine. Windows VK_MEDIA_* covers Play/Pause, Next, Previous, Volume ±, and Mute only; for seek / shuffle / repeat actions switch this button (or the connection) to the "Focus + keystroke" engine.`,
 		}
 	}
 

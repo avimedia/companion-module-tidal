@@ -41,6 +41,12 @@ export function buildAuthorizationUrl(params: {
 	return url.toString()
 }
 
+// Conservative timeout for the OAuth token endpoint. TIDAL's auth service
+// typically responds in well under a second; 15 s leaves headroom for slow
+// networks while still bounding action callbacks so they can never hang
+// indefinitely on a stalled server.
+const TIDAL_AUTH_TIMEOUT_MS = 15_000
+
 async function postToken(body: URLSearchParams, basicAuth?: string): Promise<TokenResponse> {
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/x-www-form-urlencoded',
@@ -52,6 +58,7 @@ async function postToken(body: URLSearchParams, basicAuth?: string): Promise<Tok
 		method: 'POST',
 		headers,
 		body: body.toString(),
+		signal: AbortSignal.timeout(TIDAL_AUTH_TIMEOUT_MS),
 	})
 
 	const text = await response.text()

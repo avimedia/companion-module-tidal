@@ -1,10 +1,11 @@
 import type { CompanionActionDefinitions } from '@companion-module/base'
-import { exec } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { platform } from 'node:process'
 import type ModuleInstance from './main.js'
 import type { SearchKind } from './tidal-api.js'
 import {
 	type AbstractModifier,
+	PLAYBACK_ENGINE_DEFAULT_CHOICE,
 	type PlaybackCommand,
 	type PlaybackEngine,
 	type SemanticCommand,
@@ -37,8 +38,6 @@ export type ActionsSchema = {
 	playback_send_shortcut: { options: { key: string; modifiers: string[]; engine: string } }
 }
 
-const PLAYBACK_ENGINE_DEFAULT_CHOICE = '__use_connection_default__'
-
 const PLAYBACK_ENGINE_CHOICES = [
 	{
 		id: PLAYBACK_ENGINE_DEFAULT_CHOICE,
@@ -67,17 +66,23 @@ const SEARCH_KIND_CHOICES = [
 	{ id: 'videos', label: 'Videos' },
 ]
 
+// Launches a URI through the OS via argv-array spawn — never via a shell — so
+// arbitrary user-supplied URI strings cannot inject shell metacharacters.
+//   macOS:   `open <uri>`
+//   Linux:   `xdg-open <uri>`
+//   Windows: `rundll32.exe url.dll,FileProtocolHandler <uri>` (the standard
+//            Windows URL protocol-handler entry point; doesn't shell-interpret).
 async function openExternal(uri: string): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const command =
-			platform === 'darwin'
-				? `open ${JSON.stringify(uri)}`
-				: platform === 'win32'
-					? `start "" ${JSON.stringify(uri)}`
-					: `xdg-open ${JSON.stringify(uri)}`
+	const [cmd, args]: [string, string[]] =
+		platform === 'darwin'
+			? ['open', [uri]]
+			: platform === 'win32'
+				? ['rundll32.exe', ['url.dll,FileProtocolHandler', uri]]
+				: ['xdg-open', [uri]]
 
-		exec(command, (error) => {
-			if (error) reject(error)
+	return new Promise((resolve, reject) => {
+		execFile(cmd, args, (error) => {
+			if (error) reject(error instanceof Error ? error : new Error(`${cmd} failed`))
 			else resolve()
 		})
 	})
@@ -115,7 +120,8 @@ export function UpdateActions(self: ModuleInstance): void {
 			callback: async (event) => {
 				const query = String(event.options.query ?? '').trim()
 				const kind = event.options.kind as SearchKind
-				const limit = Number(event.options.limit ?? 10)
+				const rawLimit = Number(event.options.limit ?? 10)
+				const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(50, Math.trunc(rawLimit))) : 10
 				await self.performSearch(query, kind, limit)
 			},
 		},
@@ -254,7 +260,7 @@ export function UpdateActions(self: ModuleInstance): void {
 		playback_send_shortcut: {
 			name: 'Playback: Send custom keyboard shortcut to TIDAL',
 			description:
-				'Activates the TIDAL window and sends the chosen key with the selected modifiers. Only available with the "Focus + keystroke" engine.',
+				'Sends an arbitrary keystroke to the TIDAL desktop window. Requires the chosen engine to resolve to "Focus + keystroke" — other engines will log a warning and skip. Use the per-button Engine dropdown below to override the connection-level engine for this single button.',
 			options: [
 				{
 					type: 'dropdown',

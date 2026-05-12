@@ -90,7 +90,7 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			default: '',
 		},
 		{
-			type: 'textinput',
+			type: 'secret-text',
 			id: 'clientSecret',
 			label: 'Client Secret',
 			width: 6,

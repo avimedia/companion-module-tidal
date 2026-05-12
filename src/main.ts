@@ -50,6 +50,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	async init(config: ModuleConfig): Promise<void> {
 		this.config = { ...GetDefaultConfig(), ...config }
+		this.normalizeConfig()
 		this.api = new TidalApi(this)
 
 		this.updateActions()
@@ -59,6 +60,15 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		this.resetTransientVariables()
 
 		await this.bootstrapAuth()
+	}
+
+	// Apply input-shape normalisation that should be invariant for the rest of
+	// the module. Today this is only the ISO 3166-1 alpha-2 country code, which
+	// TIDAL requires in uppercase — the config regex allows mixed case for
+	// convenience, but every API call must see "US", "NO" etc.
+	private normalizeConfig(): void {
+		const cc = (this.config.countryCode ?? '').trim()
+		this.config.countryCode = cc.toUpperCase()
 	}
 
 	async destroy(): Promise<void> {
@@ -72,6 +82,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	async configUpdated(config: ModuleConfig): Promise<void> {
 		const previous = this.config
 		this.config = { ...GetDefaultConfig(), ...config }
+		this.normalizeConfig()
 
 		const credsChanged =
 			previous.clientId !== this.config.clientId ||
@@ -84,6 +95,18 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.config.refreshToken = ''
 			this.config.tokenExpiresAt = 0
 			this.config.authStatus = 'Not authenticated'
+			// Wipe any pending PKCE pair so the next bootstrap generates a fresh
+			// one that matches the new client id / scopes.
+			this.config.codeVerifier = ''
+			this.config.authUrl = ''
+			// Abandon any in-flight refresh against the old creds and any
+			// scheduled proactive refresh; otherwise their resolved values would
+			// leak into the new credential's auth state.
+			this.refreshInFlight = null
+			if (this.refreshTimer) {
+				clearTimeout(this.refreshTimer)
+				this.refreshTimer = null
+			}
 		}
 
 		this.saveConfig(this.config)
@@ -190,18 +213,26 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	}
 
 	private prepareAuthorizationCodeFlow(): void {
-		const { verifier, challenge } = generatePkcePair()
-		this.config.codeVerifier = verifier
-		this.config.authUrl = buildAuthorizationUrl({
-			clientId: this.config.clientId,
-			redirectUri: TIDAL_OAUTH_REDIRECTOR,
-			scopes: this.config.scopes,
-			state: this.id,
-			codeChallenge: challenge,
-		})
+		// Preserve any pending PKCE pair across config saves. If the user has
+		// the previous Auth URL open in a browser and is about to submit it,
+		// regenerating the verifier here would invalidate that flow — the
+		// code returned by TIDAL could not be redeemed. We only generate a
+		// fresh pair when no verifier exists (first run, or after creds
+		// changed in configUpdated()).
+		if (!this.config.codeVerifier || !this.config.authUrl) {
+			const { verifier, challenge } = generatePkcePair()
+			this.config.codeVerifier = verifier
+			this.config.authUrl = buildAuthorizationUrl({
+				clientId: this.config.clientId,
+				redirectUri: TIDAL_OAUTH_REDIRECTOR,
+				scopes: this.config.scopes,
+				state: this.id,
+				codeChallenge: challenge,
+			})
+			this.log('info', `TIDAL authorization URL ready. Open it in a browser:\n${this.config.authUrl}`)
+		}
 		this.config.authStatus = 'Awaiting user login'
 		this.saveConfig(this.config)
-		this.log('info', `TIDAL authorization URL ready. Open it in a browser:\n${this.config.authUrl}`)
 		this.setVariableValues({ auth_status: this.config.authStatus })
 		this.checkFeedbacks('authenticated')
 	}
@@ -293,16 +324,30 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		}
 
 		const code = typeof request.query?.code === 'string' ? request.query.code : undefined
+		const state = typeof request.query?.state === 'string' ? request.query.state : undefined
 		const error = typeof request.query?.error === 'string' ? request.query.error : undefined
 		if (error) {
 			const description = typeof request.query?.error_description === 'string' ? request.query.error_description : ''
-			this.config.authStatus = `Login failed: ${error} ${description}`.trim()
+			const message = `Login failed: ${error} ${description}`.trim()
+			this.config.authStatus = message
 			this.saveConfig(this.config)
 			this.setVariableValues({ auth_status: this.config.authStatus })
+			this.updateStatus(InstanceStatus.AuthenticationFailure, message)
+			this.checkFeedbacks('authenticated')
 			return { status: 400, body: `TIDAL login failed: ${error}\n${description}` }
 		}
 		if (!code) {
 			return { status: 400, body: 'Missing authorization code' }
+		}
+		// OAuth 2.1 §4.1.2.1: the client MUST verify that the `state` returned
+		// in the redirect matches what it sent in the authorize URL. We pass
+		// this.id as the state value when building the URL.
+		if (!state || state !== this.id) {
+			this.log('error', `OAuth callback rejected: state mismatch (expected "${this.id}", got "${state ?? ''}")`)
+			return {
+				status: 400,
+				body: 'OAuth state mismatch — this callback does not belong to this connection. Re-save the config to issue a fresh Auth URL and try again.',
+			}
 		}
 		if (!this.config.codeVerifier) {
 			return {

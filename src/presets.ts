@@ -2,8 +2,11 @@ import { combineRgb } from '@companion-module/base'
 import type ModuleInstance from './main.js'
 import type { ModuleSchema } from './main.js'
 import type { CompanionPresetDefinitions, CompanionPresetSection } from '@companion-module/base'
+import { PLAYBACK_ENGINE_DEFAULT_CHOICE } from './playback.js'
 
-const PLAYBACK_DEFAULT_ENGINE_OPTION = { engine: '__use_connection_default__' }
+// Frozen so a single shared reference cannot be accidentally mutated by callers
+// across the 8 transport presets that share it.
+const PLAYBACK_DEFAULT_ENGINE_OPTION = Object.freeze({ engine: PLAYBACK_ENGINE_DEFAULT_CHOICE })
 
 export function UpdatePresets(self: ModuleInstance): void {
 	const presets: CompanionPresetDefinitions<ModuleSchema> = {
