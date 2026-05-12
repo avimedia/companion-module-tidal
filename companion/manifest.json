@@ -5,7 +5,7 @@
 	"name": "tidal",
 	"shortname": "TIDAL",
 	"description": "Authenticate against TIDAL, search the catalog, look up tracks/albums/playlists, and launch tidal:// URIs in the TIDAL desktop client. Works in Bitfocus Companion and Bitfocus Buttons.",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"license": "MIT",
 	"repository": "git+https://github.com/avimedia/companion-module-tidal.git",
 	"bugs": "https://github.com/avimedia/companion-module-tidal/issues",

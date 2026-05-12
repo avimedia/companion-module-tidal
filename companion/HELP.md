@@ -104,8 +104,19 @@ The module ships with starter presets organised by section:
 - **Status** — single-button preset showing authentication status (tap to refresh the token).
 - **Transport** — Previous, Play/Pause, Next, Volume −, Volume +, Mute, Shuffle, Repeat. Each respects the connection-level engine setting unless overridden per button.
 - **Your playlists** _(Authorization Code mode only)_ — one preset per playlist you own, auto-generated after a library refresh. Drag any onto a button to bind it to "Play playlist <name>".
-- **Current playlist tracks** — 32 numbered presets backed by the `playlist_track_N_*` variables. They render empty until you run _Load playlist tracks into variables_; afterwards the labels and target URIs come alive without any per-preset re-emission.
-- **Search results** — 10 numbered presets backed by the `last_search_result_N_*` variables. Pressing one runs _Play search result (by index)_ for that slot. Re-run _Search catalog_ to repopulate.
+- **Playlist: <name>** _(frozen-binding, added in v0.5.1)_ — one section per playlist you have loaded via _Load playlist tracks into variables_. Each preset has the **literal track ID baked in** at emission time, so dragging captures that specific track. The resulting button stays bound to the same song even if you later load a different playlist or refresh the library. Up to 100 tracks per playlist.
+- **Last search: <query>** _(frozen-binding, added in v0.5.1)_ — appears after every search, with one preset per result. Each preset has the literal `tidal://track/<id>` URI baked in, so dragging captures that specific result.
+- **Current playlist tracks (live slots)** — 32 numbered presets backed by the `playlist_track_N_*` variables. They render empty until you run _Load playlist tracks into variables_; afterwards the labels and target URIs come alive without any per-preset re-emission. Useful for "cue stack" workflows where the same physical key plays whichever track is currently in slot N.
+- **Search results (live slots)** — 10 numbered presets backed by the `last_search_result_N_*` variables. Pressing one runs _Play search result (by index)_ for that slot. Re-run _Search catalog_ to repopulate.
+
+### Frozen vs. live: which to use
+
+| You want…                                                                        | Use                                                                                                             |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| A specific song permanently on key X                                             | Frozen _Playlist: …_ or _Last search: …_ preset; the literal track ID is captured at drag-time.                 |
+| A button labelled "slot 1" whose content rotates as you load different playlists | Live-slot _Current playlist tracks_ preset; the action references a variable that's re-resolved on every press. |
+| "Search and play the top hit" two-button workflow                                | Live-slot _Search results_ preset (binds to slot N) or the _Play search result (by index)_ action.              |
+| "Play this specific song I just searched for"                                    | Frozen _Last search: …_ preset, dragged immediately after the search.                                           |
 
 ### Library-feature workflow
 
@@ -113,7 +124,16 @@ The module ships with starter presets organised by section:
 2. Open the Auth URL surfaced in the connection log (or the _Auth URL_ config field) and complete the TIDAL login.
 3. The module auto-runs _Refresh user library_ on first authenticate. You can run it again any time after creating new playlists in TIDAL.
 4. The _Your playlists_ preset section now contains one button per playlist. Drag the ones you want straight onto your grid.
-5. To play a specific track inside a playlist, bind a button to _Load playlist tracks into variables_, pick the playlist + count. Then drag _Current playlist tracks → track N_ presets for the tracks you want.
+5. To pin individual tracks from a playlist to specific keys, bind a button to _Load playlist tracks into variables_, pick the playlist + count, and press it once. A new _Playlist: <name>_ section appears in the preset library with one preset per track. Drag any onto a key — the literal track ID is baked into the button at drag-time.
+6. To pin a track from a search result, run _Search catalog_ once. A new _Last search: <query>_ section appears in the preset library with one preset per result. Drag any onto a key.
+
+### Pinning specific tracks (frozen-binding workflow)
+
+After running _Load playlist tracks into variables_ for a playlist OR _Search catalog_ for a query, drag the resulting frozen-binding presets onto Stream Deck (or any Companion surface) keys. Each dragged preset bakes the literal `tidal://track/<id>` URI into the button's action options, so:
+
+- The button keeps playing **the same track** even if you later load a different playlist.
+- _Refresh user library_ clears the preset-library section but **does not** affect already-dragged buttons.
+- You can drag tracks from many different playlists onto the same Companion page — each button stays bound to its original track.
 
 ## Compatibility
 

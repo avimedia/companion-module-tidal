@@ -338,24 +338,43 @@ Quick checks that the engine selector behaves cleanly:
 
 5. Add a button bound to **Play playlist (from your library)** → the dropdown lists all cached playlists. Pick one, save, press → TIDAL desktop opens that playlist.
 
-**Per-track variable loading**
+**Per-track variable loading (live slots)**
 
 6. Add a button bound to **Load playlist tracks into variables** → pick a playlist, set count (e.g. 16), press.
 7. Variables `playlist_track_1_id` … `playlist_track_16_id` now hold real track IDs. `last_loaded_playlist_name` shows the playlist name.
-8. Open the preset browser → **Current playlist tracks** → presets 1–16 now show their actual track titles. Presets 17–32 remain blank.
+8. Open the preset browser → **Current playlist tracks (live slots)** → presets 1–16 now show their actual track titles. Presets 17–32 remain blank.
 9. Drag preset _track 5_ onto a button and press it → TIDAL plays track 5 of that playlist.
 
-**Search-and-play workflow**
+**Frozen-binding playlist tracks** _(v0.5.1+)_
 
-10. Add a button bound to **Search catalog** → query "Bohemian Rhapsody", kind=tracks, limit=10. Press.
-11. Variables `last_search_result_1_title` … `last_search_result_10_title` are populated. Open preset browser → **Search results** → presets 1–10 show the titles.
-12. Drag preset _result 1_ onto a button → press it → TIDAL plays the top hit.
-13. Alternatively, bind a button to **Play search result (by index)** with index=1.
+10. Reuse the button from step 6 (or re-press it). Open the preset browser → a new section titled **Playlist: <playlist name>** appears alongside the live-slot section.
+11. Drag a specific track (e.g. _Bohemian Rhapsody_) onto a button. Press → TIDAL plays that exact track.
+12. Inspect the dragged button's actions → the `open_tidal_uri` action's `URI` field should be a literal `tidal://track/12345678`, **not** a `$(tidal:playlist_track_5_uri)` variable reference. That confirms the binding is frozen.
+13. Run **Load playlist tracks into variables** with a _different_ playlist. The button from step 11 keeps playing the original track; the live-slot section's buttons follow the new playlist.
+14. Verify multiple playlist sections coexist: load playlist A, then playlist B. The preset library should show both _Playlist: A_ and _Playlist: B_ sections simultaneously.
+
+**Search-and-play workflow (live slots)**
+
+15. Add a button bound to **Search catalog** → query "Bohemian Rhapsody", kind=tracks, limit=10. Press.
+16. Variables `last_search_result_1_title` … `last_search_result_10_title` are populated. Open preset browser → **Search results (live slots)** → presets 1–10 show the titles.
+17. Drag preset _result 1_ onto a button → press it → TIDAL plays the top hit.
+18. Alternatively, bind a button to **Play search result (by index)** with index=1.
+
+**Frozen-binding search results** _(v0.5.1+)_
+
+19. After step 15, the preset library should also contain a section titled **Last search: <query>**.
+20. Drag a specific result onto a button. Press → TIDAL plays that exact track.
+21. Run a _different_ search. The frozen button from step 20 keeps playing the original track; live-slot buttons follow the new search.
+
+**Refresh-library after-effects** _(v0.5.1+)_
+
+22. Run **Refresh user library**. The _Playlist: …_ frozen sections disappear from the preset library (the per-playlist cache is cleared). Any buttons already on your grid keep working — they have the literal track IDs baked in.
+23. Re-load a playlist via **Load playlist tracks into variables** → its _Playlist: <name>_ section reappears in the preset library.
 
 **Soft-degrade smoke test**
 
-14. Switch the connection to **Client Credentials** mode (no user login required). Reload the connection.
-15. Verify: _Your playlists_ preset section is empty, playlist dropdown shows the "Run Refresh user library first" placeholder, catalog actions (Search, Load track) still work.
+24. Switch the connection to **Client Credentials** mode (no user login required). Reload the connection.
+25. Verify: _Your playlists_ preset section is empty, _Playlist: …_ and _Last search: …_ sections are absent until a search is run, playlist dropdown shows the "Run Refresh user library first" placeholder, catalog actions (Search, Load track) still work.
 
 ## 5. Smoke tests — feedbacks
 

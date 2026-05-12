@@ -51,8 +51,17 @@ The module ships an end-to-end "discover → assign → play" flow for user play
 
 1. **Refresh user library** action — fetches all your owned playlists in one call (paginated transparently), caches them, and re-emits both the `play_playlist` dropdown and a "Your playlists" preset section so each playlist appears as a draggable preset.
 2. **Play playlist** action — single dropdown of your cached playlists; runs `tidal://playlist/<id>` through the OS handler.
-3. **Load playlist tracks into variables** action — fetches up to 32 tracks of the chosen playlist and publishes them as `playlist_track_1_*` … `playlist_track_32_*` variables. The "Current playlist tracks" preset section is regenerated with their titles, so users drag tracks 1–N straight onto buttons.
-4. **Play search result (by index)** — companion to _Search catalog_; each search additionally publishes the top 10 results as `last_search_result_N_*` variables and a 10-button preset section. Two-button workflow: _Search X_ on one button, _Play 1st result_ on another.
+3. **Load playlist tracks into variables** action — fetches up to 32 tracks of the chosen playlist and publishes them as `playlist_track_1_*` … `playlist_track_32_*` variables. The "Current playlist tracks (live slots)" preset section comes alive with their titles, and a parallel "Playlist: <name>" frozen-binding section (v0.5.1+) appears with one draggable preset per actual track.
+4. **Play search result (by index)** — companion to _Search catalog_; each search additionally publishes the top 10 results as `last_search_result_N_*` variables, a 10-button live-slot preset section, and (v0.5.1+) a "Last search: <query>" frozen-binding section with one preset per actual result.
+
+### Two preset binding models
+
+The preset library exposes the user's library data through two parallel UXes:
+
+- **Live slots** (v0.5.0) — presets whose action URIs reference Companion variables like `$(tidal:playlist_track_5_uri)`. Companion re-resolves the variable on every press, so the button always plays whatever's currently in slot 5 of the most-recently-loaded playlist. Good for cue-stack workflows.
+- **Frozen bindings** (v0.5.1+) — presets where the literal `tidal://track/<id>` URI is baked into the action options at preset-emission time. Dragging captures that specific track; the button keeps playing the same song forever, even after the user loads a different playlist or refreshes the library. Good for permanent "song X on key Y" assignments.
+
+Both sections coexist in the preset library; pick whichever fits your show.
 
 ## Notes for Buttons compatibility
 

@@ -11,6 +11,14 @@ import { PLAYBACK_ENGINE_DEFAULT_CHOICE } from './playback.js'
 // dropdown for the long tail. (The dropdown is unlimited.)
 const MAX_PLAYLIST_PRESETS = 300
 
+// Per-playlist frozen-binding section size cap. Each loaded playlist gets one
+// "Playlist: <name>" section; we only emit the first N tracks as draggable
+// presets to keep the preset library scrollable when the user has many large
+// playlists loaded. Anyone needing tracks beyond slot N can fall back to the
+// slot-based "Current playlist tracks" section (32 slots) or load a smaller
+// playlist.
+const FROZEN_TRACKS_PER_PLAYLIST = 100
+
 // Frozen so a single shared reference cannot be accidentally mutated by callers
 // across the 8 transport presets that share it.
 const PLAYBACK_DEFAULT_ENGINE_OPTION = Object.freeze({ engine: PLAYBACK_ENGINE_DEFAULT_CHOICE })
@@ -322,6 +330,91 @@ export function UpdatePresets(self: ModuleInstance): void {
 		}
 	}
 
+	// FROZEN-BINDING sections — these are the drag-and-drop UX for "this
+	// specific track on this specific key, forever". Each preset's action
+	// stores the literal `tidal://track/<id>` URI at emission time, so the
+	// resulting Stream Deck button is decoupled from whatever's currently
+	// loaded in the variable slots.
+	const frozenSections: CompanionPresetSection<ModuleSchema>[] = []
+
+	// One section per previously-loaded playlist. The cache accumulates as the
+	// user runs `load_playlist_into_variables` (or any other path that hydrates
+	// playlistTracksCache), and is cleared on `refresh_library`. Existing
+	// buttons keep their frozen track IDs even after the cache is cleared —
+	// only the *preset library* loses the section.
+	for (const [playlistId, tracks] of self.playlistTracksCache.entries()) {
+		const playlist = self.playlistCache.find((p) => p.id === playlistId)
+		const name = playlist?.name ?? `Playlist ${playlistId}`
+		const sectionId = `playlist_tracks_${playlistId}`
+		const presetIds: string[] = []
+		tracks.slice(0, FROZEN_TRACKS_PER_PLAYLIST).forEach((track, idx) => {
+			if (!track.id || !track.uri) return
+			const presetId = `pinned_pl_${playlistId}_${idx + 1}`
+			presetIds.push(presetId)
+			presets[presetId as keyof typeof presets] = {
+				type: 'simple',
+				name: track.title || `Track ${idx + 1}`,
+				style: {
+					text: truncate(track.title || `Track ${idx + 1}`, 60),
+					size: 'auto',
+					color: combineRgb(255, 255, 255),
+					bgcolor: combineRgb(32, 96, 32),
+				},
+				steps: [
+					{
+						down: [{ actionId: 'open_tidal_uri', options: { uri: track.uri } }],
+						up: [],
+					},
+				],
+				feedbacks: [],
+			}
+		})
+		if (presetIds.length > 0) {
+			frozenSections.push({
+				id: sectionId,
+				name: `Playlist: ${truncate(name, 60)}`,
+				definitions: presetIds,
+			})
+		}
+	}
+
+	// One section per most-recent-search. Regenerated on every search so the
+	// section name reflects the active query. The presets stored on Stream
+	// Deck keys retain their original track IDs after a new search runs —
+	// only the *preset library* section is replaced.
+	if (self.lastSearchEntries.length > 0) {
+		const presetIds: string[] = []
+		self.lastSearchEntries.forEach((entry, idx) => {
+			if (!entry.id || !entry.uri) return
+			const presetId = `pinned_search_${idx + 1}`
+			presetIds.push(presetId)
+			presets[presetId as keyof typeof presets] = {
+				type: 'simple',
+				name: entry.title || `Search result ${idx + 1}`,
+				style: {
+					text: truncate(entry.title || `Search result ${idx + 1}`, 60),
+					size: 'auto',
+					color: combineRgb(255, 255, 255),
+					bgcolor: combineRgb(96, 64, 32),
+				},
+				steps: [
+					{
+						down: [{ actionId: 'open_tidal_uri', options: { uri: entry.uri } }],
+						up: [],
+					},
+				],
+				feedbacks: [],
+			}
+		})
+		if (presetIds.length > 0) {
+			frozenSections.push({
+				id: 'last_search_frozen',
+				name: `Last search: ${truncate(self.lastSearchQuery || 'results', 50)}`,
+				definitions: presetIds,
+			})
+		}
+	}
+
 	const structure: CompanionPresetSection<ModuleSchema>[] = [
 		{
 			id: 'loaded_track',
@@ -357,14 +450,19 @@ export function UpdatePresets(self: ModuleInstance): void {
 			name: 'Your playlists',
 			definitions: playlistPresetIds,
 		},
+		// Frozen-binding sections appear above the live-slot sections so users
+		// looking for "drag a specific track onto a key" see them first; the
+		// slot-based sections below are for the cue-stack UX where the same
+		// key plays whichever track is currently in slot N.
+		...frozenSections,
 		{
 			id: 'current_playlist_tracks',
-			name: 'Current playlist tracks',
+			name: 'Current playlist tracks (live slots)',
 			definitions: currentTrackPresetIds,
 		},
 		{
 			id: 'search_results',
-			name: 'Search results',
+			name: 'Search results (live slots)',
 			definitions: searchResultPresetIds,
 		},
 	]

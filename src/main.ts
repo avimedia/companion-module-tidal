@@ -70,10 +70,18 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	currentPlaylistId: string = ''
 	currentPlaylistName: string = ''
 	lastSearchEntries: LibraryTrackEntry[] = []
+	lastSearchQuery: string = ''
 	libraryRefreshedAt: number = 0
 
+	// Per-playlist track cache, indexed by playlist id. Public so the preset
+	// emitter can iterate it to build one "Playlist: <name>" section per
+	// previously-loaded playlist, each with FROZEN-BINDING presets (i.e. the
+	// literal track ID is baked into the action options at emission time, so a
+	// drag-and-drop captures that specific track and the resulting button keeps
+	// playing the same track even after a different playlist is loaded).
+	playlistTracksCache: Map<string, LibraryTrackEntry[]> = new Map()
+
 	private libraryRefreshInFlight: Promise<void> | null = null
-	private playlistTracksCache: Map<string, LibraryTrackEntry[]> = new Map()
 
 	private refreshTimer: NodeJS.Timeout | null = null
 	private refreshInFlight: Promise<string | null> | null = null
@@ -506,7 +514,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 					uri,
 				}
 			})
+			this.lastSearchQuery = query
 			this.publishSearchResultVariables()
+			// Re-emit the preset library so the new "Last search: <query>"
+			// frozen-binding section reflects the just-captured results.
+			this.updatePresets()
 
 			if (first && kind === 'tracks') {
 				this.applyTrackResource(first, response)
