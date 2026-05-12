@@ -10,6 +10,13 @@ on:
 permissions:
   contents: read
 
+# Pre-emptively run the @v4 javascript actions on Node 24 instead of the
+# deprecated Node 20. This is GitHub's recommended interim fix until v5 of
+# checkout/setup-node/upload-artifact ships:
+# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Lint + typecheck + package

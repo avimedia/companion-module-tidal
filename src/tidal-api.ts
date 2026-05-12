@@ -54,6 +54,20 @@ export class TidalApi {
 		// more. Other status codes propagate as the first error.
 		let response = await sendOnce(false)
 		if (response.status === 401) {
+			// Drain (or cancel) the first response body before re-issuing the
+			// request, otherwise the underlying socket/connection stays pinned
+			// to the un-read body until garbage collection. The cancel() call
+			// is best-effort — if the runtime doesn't expose a ReadableStream
+			// body we fall through to reading text() and discarding it.
+			try {
+				await response.body?.cancel()
+			} catch {
+				try {
+					await response.text()
+				} catch {
+					/* best effort */
+				}
+			}
 			response = await sendOnce(true)
 		}
 

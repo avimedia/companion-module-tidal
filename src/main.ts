@@ -43,6 +43,12 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	private refreshTimer: NodeJS.Timeout | null = null
 	private refreshInFlight: Promise<string | null> | null = null
+	// Incremented every time credentials change. doTokenRefresh() captures the
+	// counter when it starts and refuses to commit its result (or surface its
+	// error) if the value has moved on by the time the network call resolves.
+	// Without this, a slow refresh against the old creds can win the race and
+	// overwrite the freshly-wiped tokens in `configUpdated`.
+	private credsGeneration = 0
 
 	constructor(internal: unknown) {
 		super(internal)
@@ -101,7 +107,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.config.authUrl = ''
 			// Abandon any in-flight refresh against the old creds and any
 			// scheduled proactive refresh; otherwise their resolved values would
-			// leak into the new credential's auth state.
+			// leak into the new credential's auth state. The generation bump
+			// additionally makes doTokenRefresh discard its result if the old
+			// refresh is still in flight in the background.
+			this.credsGeneration++
 			this.refreshInFlight = null
 			if (this.refreshTimer) {
 				clearTimeout(this.refreshTimer)
@@ -262,9 +271,20 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			return null
 		}
 
+		// Capture the credentials-generation at the moment this refresh starts.
+		// If the user changes credentials while we're awaiting the network call,
+		// `configUpdated` will bump credsGeneration and the resolved value below
+		// will be discarded — we will not overwrite the freshly-wiped tokens or
+		// surface a stale error on the connection status.
+		const generation = this.credsGeneration
+
 		try {
 			if (this.config.authMode === 'client_credentials') {
 				const tokens = await fetchClientCredentialsToken(this.config.clientId, this.config.clientSecret)
+				if (generation !== this.credsGeneration) {
+					this.log('debug', 'Discarding token refresh response from a previous credential generation')
+					return null
+				}
 				this.storeTokens(tokens.access_token, undefined, tokens.expires_in)
 				return tokens.access_token
 			}
@@ -279,9 +299,19 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 				clientSecret: this.config.clientSecret,
 				refreshToken: this.config.refreshToken,
 			})
+			if (generation !== this.credsGeneration) {
+				this.log('debug', 'Discarding token refresh response from a previous credential generation')
+				return null
+			}
 			this.storeTokens(tokens.access_token, tokens.refresh_token ?? this.config.refreshToken, tokens.expires_in)
 			return tokens.access_token
 		} catch (err) {
+			if (generation !== this.credsGeneration) {
+				// Error is from the old credential generation; do not surface it
+				// — the new generation's own refresh attempt will determine the
+				// connection status.
+				return null
+			}
 			const message = (err as Error).message
 			this.log('error', `Token refresh failed: ${message}`)
 			this.config.authStatus = `Token refresh failed: ${message}`
@@ -476,7 +506,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	private applyTrackResource(resource: TidalResource, full: TidalSearchResponse): void {
 		const attrs = resource.attributes ?? {}
-		const explicit = Boolean(attrs.explicit)
+		const explicit = parseBooleanAttr(attrs.explicit)
 		this.currentTrackExplicit = explicit
 
 		const artistNames = extractArtistNames(resource, full)
@@ -488,7 +518,7 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			current_track_artists: artistNames,
 			current_track_album: albumTitle,
 			current_track_isrc: stringAttr(attrs.isrc),
-			current_track_duration: stringAttr(attrs.duration),
+			current_track_duration: parseDurationSeconds(attrs.duration),
 			current_track_explicit: explicit ? 'true' : 'false',
 			current_track_uri: `tidal://track/${resource.id}`,
 		})
@@ -501,6 +531,40 @@ function stringAttr(value: unknown): string {
 	if (typeof value === 'string') return value
 	if (typeof value === 'number' || typeof value === 'boolean') return String(value)
 	return ''
+}
+
+// Defensive boolean coercion for JSON:API attributes. TIDAL typically returns
+// a real `boolean`, but defensive code matters: `Boolean("false")` is `true`,
+// which would silently miscategorise an explicit-flag round-trip through any
+// string-shaped intermediary.
+function parseBooleanAttr(value: unknown): boolean {
+	if (value === true) return true
+	if (value === false) return false
+	if (typeof value === 'string') return value.toLowerCase() === 'true' || value === '1'
+	if (typeof value === 'number') return value !== 0
+	return false
+}
+
+// TIDAL's `attributes.duration` field is an ISO 8601 duration string for most
+// catalog endpoints (e.g. `PT3M25S`). The corresponding Companion variable is
+// documented as "duration (seconds)" — parse to total seconds so users binding
+// the variable to button text get a number they can do arithmetic with. If the
+// upstream ever returns a plain numeric string or a number, pass it through.
+function parseDurationSeconds(value: unknown): string {
+	if (typeof value === 'number' && Number.isFinite(value)) return String(Math.round(value))
+	if (typeof value !== 'string') return ''
+	const trimmed = value.trim()
+	if (!trimmed) return ''
+	const iso = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(trimmed)
+	if (iso) {
+		const hours = iso[1] ? Number(iso[1]) : 0
+		const minutes = iso[2] ? Number(iso[2]) : 0
+		const seconds = iso[3] ? Number(iso[3]) : 0
+		const total = hours * 3600 + minutes * 60 + seconds
+		return total > 0 ? String(Math.round(total)) : trimmed
+	}
+	if (/^\d+(?:\.\d+)?$/.test(trimmed)) return String(Math.round(Number(trimmed)))
+	return trimmed
 }
 
 function collectResources(response: TidalSearchResponse): TidalResource[] {

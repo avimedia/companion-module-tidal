@@ -500,13 +500,22 @@ async function sendShortcutLinuxWayland(
 	)
 }
 
+// Check whether `cmd` is invokable from PATH. We use `which` (a real binary on
+// every Linux distro that ships Wayland) as the primary check; the previous
+// `command -v` attempt was dead code because `command` is a POSIX shell
+// builtin, not a binary on PATH that `execFile` can locate. The `sh -c
+// 'command -v …'` fallback covers ultra-minimal images that omit `which`.
 async function commandExists(cmd: string): Promise<boolean> {
 	try {
-		await execFilePromise('command', ['-v', cmd])
+		await execFilePromise('which', [cmd])
 		return true
 	} catch {
 		try {
-			await execFilePromise('which', [cmd])
+			// cmd is always a hard-coded internal value ('ydotool' / 'wtype' /
+			// 'playerctl'), never user input, so direct interpolation here is
+			// safe; we also redirect output so callers can't be tricked by
+			// stderr-only writes into thinking the lookup succeeded.
+			await execFilePromise('sh', ['-c', `command -v ${cmd} >/dev/null 2>&1`])
 			return true
 		} catch {
 			return false
