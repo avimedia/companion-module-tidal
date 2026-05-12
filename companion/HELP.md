@@ -38,15 +38,33 @@ This module connects [Bitfocus Companion](https://bitfocus.io/companion) and [Bi
 
 ### Playback actions — how they work
 
-All `Playback:` actions activate the TIDAL desktop window and then send TIDAL's own in-app keyboard shortcut. **Window focus is briefly stolen** — if you were typing in another app, the next key would go to TIDAL until you click away. For live-show usage that has overlays where focus theft is a problem, prefer triggering these from a hardware Stream Deck / Companion surface rather than a button on the same display as your show software.
+All `Playback:` actions delegate to a configurable engine (set in the connection config under **Playback control engine**). Pick the one that fits your show:
 
-Per-OS implementation:
+| Engine                | Behavior                                                           | Focus theft | Notes                                                             |
+| --------------------- | ------------------------------------------------------------------ | ----------- | ----------------------------------------------------------------- |
+| **Disabled**          | All `Playback:` actions log a warning and do nothing               | n/a         | Default for users who only want catalog/auth features             |
+| **Focus + keystroke** | Brings TIDAL forward, sends TIDAL's in-app keyboard shortcut       | yes         | Most reliable; works for every action including custom shortcuts  |
+| **OS media keys**     | Sends global media keys (`VK_MEDIA_*`, `MRMediaRemoteSendCommand`) | no          | Targets whatever app owns the OS media session, not TIDAL by name |
+| **playerctl**         | MPRIS via `playerctl --player=tidal-hifi,tidal,TIDAL`              | no          | Linux only; deterministic for TIDAL specifically                  |
 
-- **macOS**: `osascript` activates TIDAL and uses `System Events` to send the key code with the chosen modifiers.
-- **Windows**: PowerShell + `WScript.Shell.AppActivate` + `SendKeys`. PowerShell must be on `PATH` (it is by default on Windows 10/11).
-- **Linux (X11)**: `xdotool search --name TIDAL windowactivate --sync key <combo>`. Wayland sessions are not supported by this path yet — use `playerctl` externally or wait for the planned media-keys engine.
+There's a separate checkbox — **Restore previously focused app after each press** — which only takes effect with the `Focus + keystroke` engine. When enabled, the module records the active window before activating TIDAL and best-effort returns focus afterwards. Adds ~80–200 ms latency to each press.
 
-If the TIDAL desktop app isn't running, the action will simply have no effect (and may log a warning on Linux where `xdotool search` returns no matches).
+#### Engine prerequisites
+
+- **Focus + keystroke**
+  - macOS: first press will prompt for _Accessibility_ permission for the host (Companion / Buttons). Approve under _System Settings → Privacy & Security → Accessibility_.
+  - Windows: `powershell.exe` must be on PATH (it is by default on Windows 10/11).
+  - Linux X11: `xdotool` must be installed (`apt install xdotool`).
+  - Linux Wayland: **not supported**. Switch to `playerctl` or `OS media keys`.
+- **OS media keys**
+  - macOS: install [`nowplaying-cli`](https://github.com/kirtan-shah/nowplaying-cli) with `brew install nowplaying-cli`. Only Play/Pause, Next, Previous are supported via this engine on macOS — Volume/Seek/Mute log "not supported" and you fall back to `Focus + keystroke`.
+  - Windows: no installs needed — uses PowerShell P/Invoke. First press has ~1 s `Add-Type` compile latency, subsequent presses are fast.
+  - Linux: transparently redirects to `playerctl` (Linux's equivalent of "global media keys" is the MPRIS bus).
+- **playerctl**
+  - Linux only. Install with `apt install playerctl` / `dnf install playerctl`.
+  - Looks for an MPRIS-exposing TIDAL client (`tidal-hifi`, `tidal`, or `TIDAL`). If none is running you'll see `playerctl could not find an MPRIS-exposing TIDAL client` in the log.
+
+If the TIDAL desktop app isn't running, all engines will fail gracefully with a clear message in the connection log.
 
 `auth_status`, `auth_expires_at`, `current_track_id`, `current_track_title`, `current_track_artists`, `current_track_album`, `current_track_isrc`, `current_track_duration`, `current_track_explicit`, `current_track_uri`, `last_search_count`, `last_search_query`, `last_search_kind`, `last_search_first_id`, `last_search_first_title`, `current_user_id`, `current_user_name`, `current_user_country`.
 
@@ -74,8 +92,10 @@ The Authorization Code flow uses TIDAL's hosted login page and the Bitfocus-host
 
 ## Limitations
 
-- Network playback control is not part of TIDAL's public Web API. The _Playback:_ actions instead drive the local TIDAL desktop app by activating its window and sending in-app keyboard shortcuts. They cannot control a TIDAL Connect device on the network.
-- Each _Playback:_ press briefly steals window focus to the TIDAL app. A "restore previous focus" variant and a non-focus-stealing media-keys engine are on the roadmap.
-- Linux Wayland sessions are not supported by the _Playback:_ actions yet (X11 only, via `xdotool`). On Linux, `xdotool` must be installed for the _Playback:_ actions to work.
+- Network playback control is not part of TIDAL's public Web API. The _Playback:_ actions always operate on the locally installed TIDAL desktop app via the selected **Playback control engine**. They cannot control a TIDAL Connect device on the network.
+- The `Focus + keystroke` engine briefly steals window focus on each press. Enable **Restore previously focused app after each press** to mitigate, or switch to `OS media keys` / `playerctl` for non-focus-stealing engines.
+- The `OS media keys` engine on macOS requires `nowplaying-cli` (`brew install nowplaying-cli`) and supports only Play/Pause / Next / Previous. Volume/Seek/Mute log "not supported" with this engine on macOS — fall back to `Focus + keystroke` for those.
+- The `playerctl` engine is Linux-only and requires `playerctl` installed plus a TIDAL client that exposes MPRIS (`tidal-hifi`, or the official desktop app on supporting distros).
+- Linux Wayland sessions cannot use `Focus + keystroke` — use `playerctl` or `OS media keys` (which redirects to `playerctl` on Linux) instead.
 - All catalog endpoints require a `countryCode`; if you get `403`/`401` responses, double-check the configured value matches your TIDAL subscription region.
 - TIDAL's API version is referenced as `application/vnd.tidal.v1+json` in this module; if the upstream API changes, update `src/tidal-api.ts` accordingly.

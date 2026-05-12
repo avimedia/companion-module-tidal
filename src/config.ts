@@ -2,6 +2,8 @@ import type { SomeCompanionConfigField } from '@companion-module/base'
 
 export type AuthMode = 'client_credentials' | 'authorization_code'
 
+export type PlaybackEngine = 'disabled' | 'focus_keystroke' | 'media_keys' | 'playerctl'
+
 export type ModuleConfig = {
 	authMode: AuthMode
 	clientId: string
@@ -18,6 +20,9 @@ export type ModuleConfig = {
 	tokenExpiresAt: number
 
 	codeVerifier: string
+
+	playbackEngine: PlaybackEngine
+	playbackRestoreFocus: boolean
 }
 
 export function GetDefaultConfig(): ModuleConfig {
@@ -33,6 +38,10 @@ export function GetDefaultConfig(): ModuleConfig {
 		refreshToken: '',
 		tokenExpiresAt: 0,
 		codeVerifier: '',
+		// Defaults to focus_keystroke for backward compatibility with v0.2.0.
+		// Users wanting a no-op default should switch to 'disabled' explicitly.
+		playbackEngine: 'focus_keystroke',
+		playbackRestoreFocus: false,
 	}
 }
 
@@ -116,6 +125,49 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			label: 'Auth status (read only)',
 			width: 12,
 			default: 'Not authenticated',
+		},
+		{
+			type: 'static-text',
+			id: 'playbackHeader',
+			width: 12,
+			label: 'Playback control',
+			value:
+				"Local desktop-app control for the <em>Playback:</em> actions. TIDAL's public Web API does not expose " +
+				'a "play on device" endpoint, so all engines act on the locally installed TIDAL desktop client. ' +
+				'Pick the engine that fits your show; presses are no-ops if the engine is set to <em>Disabled</em>.',
+		},
+		{
+			type: 'dropdown',
+			id: 'playbackEngine',
+			label: 'Playback control engine',
+			width: 12,
+			default: 'focus_keystroke',
+			choices: [
+				{
+					id: 'disabled',
+					label: 'Disabled — Playback: actions log a warning and do nothing',
+				},
+				{
+					id: 'focus_keystroke',
+					label: 'Focus + keystroke — brings TIDAL forward and sends in-app shortcut (briefly steals focus)',
+				},
+				{
+					id: 'media_keys',
+					label:
+						'OS media keys — non-focus-stealing (macOS: needs nowplaying-cli, Windows: built-in, Linux: redirects to playerctl)',
+				},
+				{
+					id: 'playerctl',
+					label: 'playerctl (Linux MPRIS only — requires playerctl on PATH)',
+				},
+			],
+		},
+		{
+			type: 'checkbox',
+			id: 'playbackRestoreFocus',
+			label: 'Restore previously focused app after each press (focus + keystroke engine only)',
+			width: 12,
+			default: false,
 		},
 	]
 }

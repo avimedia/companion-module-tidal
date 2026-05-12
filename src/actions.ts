@@ -5,10 +5,11 @@ import type ModuleInstance from './main.js'
 import type { SearchKind } from './tidal-api.js'
 import {
 	type AbstractModifier,
-	type ShortcutKey,
+	type PlaybackCommand,
+	type SemanticCommand,
 	SUPPORTED_SHORTCUT_KEYS,
 	isSupportedShortcutKey,
-	sendShortcutToTidal,
+	sendPlaybackCommand,
 } from './playback.js'
 
 export type ActionsSchema = {
@@ -213,18 +214,18 @@ export function UpdateActions(self: ModuleInstance): void {
 				}
 			},
 		},
-		playback_play_pause: makePlaybackAction(self, 'Playback: Play / Pause', 'space', []),
-		playback_next: makePlaybackAction(self, 'Playback: Next track', 'right', ['cmdOrCtrl']),
-		playback_previous: makePlaybackAction(self, 'Playback: Previous track', 'left', ['cmdOrCtrl']),
-		playback_seek_forward: makePlaybackAction(self, 'Playback: Seek forward', 'right', ['shift']),
-		playback_seek_backward: makePlaybackAction(self, 'Playback: Seek backward', 'left', ['shift']),
-		playback_volume_up: makePlaybackAction(self, 'Playback: Volume up', 'up', ['cmdOrCtrl']),
-		playback_volume_down: makePlaybackAction(self, 'Playback: Volume down', 'down', ['cmdOrCtrl']),
-		playback_mute_toggle: makePlaybackAction(self, 'Playback: Toggle mute', 'm', ['cmdOrCtrl']),
+		playback_play_pause: makePlaybackAction(self, 'Playback: Play / Pause', 'play_pause'),
+		playback_next: makePlaybackAction(self, 'Playback: Next track', 'next'),
+		playback_previous: makePlaybackAction(self, 'Playback: Previous track', 'previous'),
+		playback_seek_forward: makePlaybackAction(self, 'Playback: Seek forward', 'seek_forward'),
+		playback_seek_backward: makePlaybackAction(self, 'Playback: Seek backward', 'seek_backward'),
+		playback_volume_up: makePlaybackAction(self, 'Playback: Volume up', 'volume_up'),
+		playback_volume_down: makePlaybackAction(self, 'Playback: Volume down', 'volume_down'),
+		playback_mute_toggle: makePlaybackAction(self, 'Playback: Toggle mute', 'mute_toggle'),
 		playback_send_shortcut: {
 			name: 'Playback: Send custom keyboard shortcut to TIDAL',
 			description:
-				'Activates the TIDAL window and sends the chosen key with the selected modifiers. Use this for shortcuts not covered by the other Playback actions.',
+				'Activates the TIDAL window and sends the chosen key with the selected modifiers. Only available with the "Focus + keystroke" engine.',
 			options: [
 				{
 					type: 'dropdown',
@@ -255,14 +256,8 @@ export function UpdateActions(self: ModuleInstance): void {
 				const modifiers = rawMods.filter(
 					(m): m is AbstractModifier => m === 'cmdOrCtrl' || m === 'shift' || m === 'alt',
 				)
-				try {
-					await sendShortcutToTidal(rawKey, modifiers)
-				} catch (err) {
-					self.log(
-						'error',
-						`playback_send_shortcut failed (${rawKey}, [${modifiers.join(', ')}]): ${(err as Error).message}`,
-					)
-				}
+				const command: PlaybackCommand = { type: 'custom_shortcut', key: rawKey, modifiers }
+				await dispatchPlayback(self, `playback_send_shortcut (${rawKey}, [${modifiers.join(', ')}])`, command)
 			},
 		},
 	}
@@ -273,20 +268,29 @@ export function UpdateActions(self: ModuleInstance): void {
 function makePlaybackAction(
 	self: ModuleInstance,
 	name: string,
-	key: ShortcutKey,
-	modifiers: AbstractModifier[],
+	semantic: SemanticCommand,
 ): CompanionActionDefinitions<ActionsSchema>['playback_play_pause'] {
 	return {
 		name,
 		description:
-			'Brings TIDAL desktop to the front and sends the in-app keyboard shortcut. Window focus is briefly stolen.',
+			'Controls the locally installed TIDAL desktop app. The engine used (focus+keystroke / media keys / playerctl / disabled) is picked in the connection config.',
 		options: [],
 		callback: async () => {
-			try {
-				await sendShortcutToTidal(key, modifiers)
-			} catch (err) {
-				self.log('error', `${name} failed: ${(err as Error).message}`)
-			}
+			await dispatchPlayback(self, name, { type: semantic })
 		},
+	}
+}
+
+async function dispatchPlayback(self: ModuleInstance, name: string, command: PlaybackCommand): Promise<void> {
+	try {
+		const result = await sendPlaybackCommand(command, {
+			engine: self.config.playbackEngine,
+			restoreFocus: self.config.playbackRestoreFocus,
+		})
+		if (!result.ok) {
+			self.log('warn', `${name} skipped (engine=${result.engine}): ${result.reason ?? 'no reason provided'}`)
+		}
+	} catch (err) {
+		self.log('error', `${name} failed: ${(err as Error).message}`)
 	}
 }
